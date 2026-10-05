@@ -324,27 +324,6 @@
       "note": "Synthetic imported transactions and provisioned, expiring tokens keep scope small. There is no card-number intake or identity-provider integration.",
       "messages": [
         {
-          "id": "create-auth",
-          "arrow": "api-db",
-          "label": "Authorize the customer",
-          "from": "api",
-          "to": "postgres",
-          "protocol": "pgx / SHA-256 token lookup",
-          "request": "SELECT customer_id, role FROM tokens WHERE hash = SHA256(bearer token), not revoked and not expired",
-          "response": "Customer principal, or HTTP 401/403",
-          "request_label": "Bearer token \u2192 active token lookup",
-          "response_label": "Customer identity + role / authentication error",
-          "explanation": "The database owns customer identity. Tokens are hashed at rest and never placed in a URL or browser storage.",
-          "sources": [
-            {
-              "file": "internal/auth/auth.go",
-              "symbol": "Authenticate",
-              "status": "implemented"
-            }
-          ],
-          "mode": "synchronous"
-        },
-        {
           "id": "create-http",
           "arrow": "browser-api",
           "label": "Submit the dispute",
@@ -369,7 +348,29 @@
             }
           ],
           "mode": "synchronous",
-          "simplification": "Customer UI keeps a retry key only while this page remains open. One chargeback per transaction still prevents duplicates after a reload."
+          "simplification": "Customer UI keeps a retry key only while this page remains open. One chargeback per transaction still prevents duplicates after a reload.",
+          "response_after": "create-commit"
+        },
+        {
+          "id": "create-auth",
+          "arrow": "api-db",
+          "label": "Authorize the customer",
+          "from": "api",
+          "to": "postgres",
+          "protocol": "pgx / SHA-256 token lookup",
+          "request": "SELECT customer_id, role FROM tokens WHERE hash = SHA256(bearer token), not revoked and not expired",
+          "response": "Customer principal, or HTTP 401/403",
+          "request_label": "Bearer token \u2192 active token lookup",
+          "response_label": "Customer identity + role / authentication error",
+          "explanation": "The database owns customer identity. Tokens are hashed at rest and never placed in a URL or browser storage.",
+          "sources": [
+            {
+              "file": "internal/auth/auth.go",
+              "symbol": "Authenticate",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous"
         },
         {
           "id": "create-commit",
@@ -438,7 +439,8 @@
               "status": "implemented"
             }
           ],
-          "mode": "synchronous"
+          "mode": "synchronous",
+          "response_after": "status-db"
         },
         {
           "id": "status-db",
@@ -501,7 +503,8 @@
             }
           ],
           "mode": "asynchronous",
-          "simplification": "A small single active scheduler makes the learning path clear. Durable row claiming remains the correctness boundary."
+          "simplification": "A small single active scheduler makes the learning path clear. Durable row claiming remains the correctness boundary.",
+          "response_after": "schedule-slot"
         },
         {
           "id": "schedule-slot",
@@ -726,9 +729,9 @@
           "from": "worker",
           "to": "postgres",
           "protocol": "pgx / durable UPDATE",
-          "request": "UPDATE batches SET publication_started=true WHERE id=$1 AND state=ready AND NOT publication_started",
+          "request": "UPDATE batches SET publication_started=true, state=unknown WHERE id=$1 AND state=ready AND NOT publication_started; audit trigger writes publication_intent in same commit",
           "response": "Exactly one changed row; publication fence is permanent",
-          "request_label": "COMMIT publication_started=true",
+          "request_label": "COMMIT publication_started=true, state=unknown + audit",
           "response_label": "Durable publication fence / changed-fence error",
           "explanation": "Once this flag may be committed, any uncertain upload outcome must be reconciled. Absence of a final file is no longer permission to publish again.",
           "sources": [
@@ -747,7 +750,7 @@
             }
           ],
           "mode": "synchronous",
-          "durable": "publication_started=false \u2192 true and audit event committed in one transaction"
+          "durable": "ready \u2192 unknown; permanent publication intent + audit event commit together"
         },
         {
           "id": "deliver-publish",
@@ -757,7 +760,7 @@
           "to": "receiver",
           "protocol": "pkg/sftp Rename / simulator atomic link",
           "request": "Rename(/incoming/.{batch_id}.{attempt_id}.tmp, /incoming/{batch_id}.csv), without replacement",
-          "response": "Success, already-exists error or lost response; reconcile final file and acknowledgement",
+          "response": "Success, already-exists error or lost response; reconcile final file and acknowledgement; a verified final file changes unknown to submitted",
           "request_label": "Rename .tmp \u2192 {batch_id}.csv; never overwrite",
           "response_label": "Success / ambiguity \u2192 reconcile same identity",
           "explanation": "The receiver exposes a complete immutable final file with an atomic no-replace operation. The final name is derived from the permanent batch ID.",
@@ -974,7 +977,8 @@
               "status": "implemented"
             }
           ],
-          "mode": "synchronous"
+          "mode": "synchronous",
+          "response_after": "ops-db"
         },
         {
           "id": "ops-db",

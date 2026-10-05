@@ -85,3 +85,12 @@ def test_explicit_unimplemented_reference_stays_honest(tmp_path):
     result = builder.resolve_source(tmp_path, source, str(tmp_path))
     assert result["status"] == "not implemented"
     assert "code" not in result
+
+
+def test_create_response_is_drawn_after_durable_commit(tmp_path):
+    builder.build(ROOT, tmp_path, compile_ts=False)
+    document = ElementTree.parse(tmp_path / "sequences/create.svg")
+    hops = [item.attrib.get("aria-label", "") for item in document.iter()]
+    commit = hops.index("Commit intake and its audit event response")
+    response = hops.index("Submit the dispute response")
+    assert commit < response

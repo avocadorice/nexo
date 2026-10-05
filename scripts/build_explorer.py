@@ -148,6 +148,7 @@ def validate(mapping: dict) -> None:
     for flow in mapping["flows"]:
         if not flow["messages"]:
             raise ValueError(f"Empty flow: {flow['id']}")
+        ordered_ids = [message["id"] for message in flow["messages"]]
         for message in flow["messages"]:
             for field in ("request", "response", "protocol", "explanation", "sources", "mode"):
                 if not message.get(field):
@@ -156,6 +157,12 @@ def validate(mapping: dict) -> None:
                 raise ValueError(f"Unknown component in message {message['id']}")
             if message["arrow"] not in arrow_ids:
                 raise ValueError(f"Unknown arrow in message {message['id']}")
+            after = message.get("response_after")
+            if after and (
+                after not in ordered_ids
+                or ordered_ids.index(after) <= ordered_ids.index(message["id"])
+            ):
+                raise ValueError(f"Invalid response ordering in {message['id']}")
             message_ids.append(message["id"])
             used_arrows.add(message["arrow"])
     if len(message_ids) != len(set(message_ids)):
@@ -242,8 +249,25 @@ def sequence(flow: dict, mapping: dict, glossary: dict) -> str:
     )
     positions = {component: 120 + index * 240 for index, component in enumerate(ids)}
     width = max(600, len(ids) * 240)
-    row_height = 164
-    height = 110 + len(flow["messages"]) * row_height
+    events = []
+    pending: dict[str, list] = {}
+
+    def respond(index, message):
+        events.append(("response", index, message))
+        for original_index, original in pending.pop(message["id"], []):
+            respond(original_index, original)
+
+    for index, message in enumerate(flow["messages"]):
+        events.append(("request", index + 1, message))
+        if message.get("response_after"):
+            pending.setdefault(message["response_after"], []).append((index + 1, message))
+        else:
+            respond(index + 1, message)
+    if pending:
+        raise ValueError(f"Unresolved sequence response ordering in {flow['id']}")
+    height = 95 + sum(
+        115 if kind == "response" and msg.get("durable") else 80 for kind, _, msg in events
+    )
     parts = [svg_start(width, height, flow["name"])]
     for component in ids:
         box = next(item for item in mapping["components"] if item["id"] == component)
@@ -255,43 +279,41 @@ def sequence(flow: dict, mapping: dict, glossary: dict) -> str:
         )
         parts.append(label(box["name"], x, 35, glossary, 13))
         parts.append(label(box["language"], x, 53, glossary, 10))
-    for index, message in enumerate(flow["messages"]):
-        y = 95 + index * row_height
+    y = 88
+    for kind, index, message in events:
+        is_response = kind == "response"
+        event_height = 115 if is_response and message.get("durable") else 80
         left, right = positions[message["from"]], positions[message["to"]]
-        request_end = right if left != right else right + 105
-        dash = ' stroke-dasharray="7 5"' if message["mode"] == "asynchronous" else ""
+        end = right if left != right else right + 105
+        if is_response:
+            left, end = end, left
+        dashed = is_response or message["mode"] == "asynchronous"
+        dash = ' stroke-dasharray="5 4"' if dashed else ""
         parts.append(
             f'<g class="hop" data-message="{message["id"]}" tabindex="0" role="button" '
-            f'aria-label="{escape(message["label"])}"><rect class="background" '
-            f'x="4" y="{y - 20}" width="{width - 8}" height="150" rx="4" '
-            'fill="white" fill-opacity=".82"/>'
+            f'aria-label="{escape(message["label"])} {kind}"><rect class="background" '
+            f'x="4" y="{y - 15}" width="{width - 8}" height="{event_height - 5}" '
+            'rx="4" fill="white" fill-opacity=".7"/>'
         )
+        heading = f"{index}. {message['label']} · {kind}"
+        if not is_response:
+            heading += f" · {message['mode']}"
+        parts.append(label(heading, width / 2, y, glossary, 12))
+        detail = message["response_label" if is_response else "request_label"]
+        for offset, line in enumerate(textwrap.wrap(detail, max(30, width // 8))[:2]):
+            parts.append(label(line, width / 2, y + 18 + offset * 14, glossary, 11))
         parts.append(
-            label(
-                f"{index + 1}. {message['label']} · {message['mode']}", width / 2, y, glossary, 12
-            )
-        )
-        for offset, line in enumerate(
-            textwrap.wrap(message["request_label"], max(30, width // 8))[:2]
-        ):
-            parts.append(label(line, width / 2, y + 19 + offset * 14, glossary, 11))
-        parts.append(
-            f'<path class="ink" d="M {left} {y + 42} H {request_end}" fill="none" '
+            f'<path class="ink" d="M {left} {y + 45} H {end}" fill="none" '
             f'stroke="#455c6b" marker-end="url(#arrow)"{dash}/>'
         )
-        parts.append(label(message["response_label"], width / 2, y + 64, glossary, 11))
-        parts.append(
-            f'<path class="ink" d="M {request_end} {y + 77} H {left}" fill="none" '
-            'stroke="#455c6b" stroke-dasharray="3 4" marker-end="url(#arrow)"/>'
-        )
-        if message.get("durable"):
-            for offset, line in enumerate(
-                textwrap.wrap("◆ " + message["durable"], max(35, width // 8))[:2]
-            ):
+        if is_response and message.get("durable"):
+            lines = textwrap.wrap("◆ " + message["durable"], max(35, width // 8))[:2]
+            for offset, line in enumerate(lines):
                 parts.append(
-                    label(line, width / 2, y + 99 + offset * 14, glossary, 11, color="#246745")
+                    label(line, width / 2, y + 68 + offset * 14, glossary, 11, color="#246745")
                 )
         parts.append("</g>")
+        y += event_height
     return "".join(parts) + "</svg>"
 
 
