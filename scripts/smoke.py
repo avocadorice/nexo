@@ -20,6 +20,16 @@ from nexo.batching import slot_cutoff
 cutoff=slot_cutoff(datetime.now(UTC))
 with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
     customer=conn.execute("SELECT id FROM customers WHERE label='Synthetic Alice'").fetchone()[0]
+    prior=conn.execute("""SELECT id FROM chargebacks WHERE customer_id=%s
+        AND idempotency_key LIKE 'smoke-%%' AND batch_id IS NOT NULL
+        ORDER BY received_at,id LIMIT 8""",(customer,)).fetchall()
+    if len(prior)==8:
+        print(json.dumps({"due_chargeback_ids":[str(row[0]) for row in prior],
+                          "cutoff":cutoff.isoformat(),"reused":True}))
+        raise SystemExit(0)
+    completed=conn.execute("SELECT completed_at FROM slots WHERE cutoff=%s",(cutoff,)).fetchone()
+    if completed and completed[0] is not None:
+        raise RuntimeError("Current slot already completed; run due-fixture smoke in a fresh slot")
     ids=[]
     for n in range(8):
         transaction,chargeback=uuid4(),uuid4()

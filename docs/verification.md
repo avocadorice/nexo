@@ -1,0 +1,25 @@
+# Verification record
+
+Evidence recorded on 2026-10-05. The local system and explorer run; the overall goal remains incomplete until the real cloud deployment is executed and checked. No billable cloud resources have been created.
+
+## Executed checks
+
+- PostgreSQL 17 integration tests cover concurrent duplicate intake, customer authorization, token revocation, exact bigint amounts, unique dispute identity, permanent batch assignment, immutable artifact metadata, append-only audits and terminal states. Go race detection passes.
+- Eight concurrent claimers assign 40 eligible rows into bounded batches without duplicate or missing membership. A lost S3 response after object persistence leaves recoverable building state; rebuilding yields identical key, CSV and digest.
+- Real PostgreSQL, SeaweedFS S3 and Python SFTP tests cover six competing workers, one publication fence, partial-upload retries, lost rename responses, late acknowledgements, absent ambiguous files, corrupt remote bytes and preservation of known submission across outages. Receiver receipts and chargeback deduplication survive restart.
+- A prepared HTTPS request from the real boto3 SDK has a fixed Content-Length and no chunked transfer. This checks Spaces compatibility without a network call or real credentials. DigitalOcean execution remains pending.
+- The Go API, delivery worker, Python simulator, scheduler CronJob and migration Job run in a real kind cluster inside an isolated Colima VM. PostgreSQL and SeaweedFS use persistent volumes; the simulator is in a separate namespace with persistent receipts.
+- Kubernetes smoke: an actual API request returns 201, replay returns the same identifier, and another customer gets 404. Eight explicitly synthetic pre-cutoff fixtures pass through scheduling, S3 archival, SFTP publication and matching acknowledgement. Replay of the completed slot reports zero claims and zero builds. A later rollout preserves all eight acknowledged batches.
+- Browser verification covers customer and operations entry pages, authentication errors, the explorer's simultaneous architecture/sequence/code views, hover and keyboard previews, pinned selections, zoom, glossary tooltips and exact local VS Code links. No browser console errors were observed. Authenticated UI pages were not manually tested with real tokens; authenticated HTTP smoke validates the API boundary.
+- The local restore drill restored all nine tables, including nine chargebacks, eight batches, sixteen delivery attempts and 81 audit events, with zero financial or relationship violations. It restored an isolated database without modifying live rows. See [recovery evidence](recovery.md); historical cross-store disaster recovery is still a manual procedure.
+- A repeatable real-service benchmark accepted 1,000 of 1,000 HTTP requests at 506.7/second (short burst; p95 112.7 ms). It drained 100,000 queued chargebacks into 104 files and matching durable receiver acknowledgements in 48.93 seconds. Every CSV digest, amount and membership matched; the receiver recorded 100,000 distinct chargebacks. See [measured environment and limitations](performance.md).
+- TypeScript compilation, traceability validation and Python lint pass. Every mapped source symbol and Kubernetes object resolves. Diagrams and source excerpts are generated from the one mapping rather than copied by hand.
+- Terraform initialized with pinned provider 2.103.0 and validates. Local/cloud overlays render. The deployment applies prerequisites, waits for migration success, then starts new workloads. Terraform, doctl and kind are installed in ignored local tooling directories.
+
+## Remaining work
+
+- User DigitalOcean sign-in and locally configured provisioning credentials; none have been supplied yet. The selected private topology is approximately $90/month.
+- An account-specific Terraform plan and cost review, followed by authorized provisioning and private-registry image deployment.
+- Cloud synthetic smoke, encrypted service checks, provider backup/restore validation, sustained load testing and operational observation.
+
+The successful local tests establish working behavior on this machine. They do not establish production bank certification, real Visa/Mastercard interoperability, multi-region resilience or cloud capacity. The simulator contract, provisioned tokens, single database node and other deliberate limits remain documented beside the relevant explorer steps and in [requirements](requirements.md).
