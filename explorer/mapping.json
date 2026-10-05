@@ -54,10 +54,15 @@
         {
           "file": "internal/api/api.go",
           "symbol": "ObserveAndLimit",
-          "status": "implemented"
+          "status": "implemented",
+          "focus": "case slots <- struct{}{}:",
+          "focus_end": "fail(w, http.StatusTooManyRequests",
+          "context": 1,
+          "lines": 8,
+          "label": "Reject extra requests when all 200 slots are busy"
         }
       ],
-      "scaling": "Replicate stateless API pods. A 200-request in-flight cap returns HTTP 429 before queueing at the bounded database connection pool; request bodies are limited to 4 KiB.",
+      "scaling": "Add API replicas to handle more requests. Each pod allows 200 API requests at once; extra requests get HTTP 429 and Retry-After: 1. This keeps work from piling up at the database connection pool. Request bodies are limited to 4 KiB.",
       "status": "implemented",
       "external": false,
       "deployment_label": "Deployment/api"
@@ -143,7 +148,7 @@
           "plumbing": true
         }
       ],
-      "scaling": "Up to BATCH_MAX_ROWS rows per file and SCHEDULE_MAX_BATCHES per run. Advisory lock bounds active schedulers.",
+      "scaling": "BATCH_MAX_ROWS limits rows per file; SCHEDULE_MAX_BATCHES limits new batches per run. A database lock allows one active scheduler.",
       "status": "implemented",
       "external": false,
       "deployment_label": "Job (schedule)"
@@ -171,7 +176,7 @@
           "plumbing": true
         }
       ],
-      "scaling": "Objects have stable batch-derived keys; files are bounded at 10,000 rows / 4 MiB. Local provider: SeaweedFS. Cloud object storage is proposed, not provisioned.",
+      "scaling": "The batch ID determines the object key. Files are limited to 10,000 rows / 4 MiB. SeaweedFS runs locally; cloud object storage has not been provisioned.",
       "status": "implemented",
       "external": false,
       "deployment_label": "StatefulSet / S3"
@@ -198,7 +203,7 @@
           "plumbing": true
         }
       ],
-      "scaling": "Bounded due-work query and one active transfer per process. Scale replicas with a per-batch advisory lock.",
+      "scaling": "Each process handles one transfer at a time and reads up to 20 due batches. More replicas can handle different batches; a database lock prevents two workers handling the same batch.",
       "status": "implemented",
       "external": false,
       "deployment_label": "Deployment/worker"
@@ -342,7 +347,7 @@
     {
       "id": "create",
       "name": "Create a chargeback",
-      "note": "Synthetic imported transactions and provisioned, expiring tokens keep scope small. There is no card-number intake or identity-provider integration.",
+      "note": "This system uses imported synthetic transactions and provisioned, expiring tokens. It does not collect card numbers or connect to an identity provider.",
       "messages": [
         {
           "id": "create-http",
@@ -351,36 +356,50 @@
           "from": "browser",
           "to": "api",
           "protocol": "HTTPS / JSON",
-          "request": "POST /api/chargebacks\nAuthorization: Bearer <token>\nIdempotency-Key: <stable UUID>\n{\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"reason\":\"FRAUD\"}",
+          "request": "POST /api/chargebacks\nAuthorization: Bearer <token>\nIdempotency-Key: <UUID>\n{\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"reason\":\"FRAUD\"}",
           "response": "201 Created (new) or 200 OK (replay)\n{\"id\":\"UUID\",\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"currency\":\"USD\",\"network\":\"visa\",\"reason\":\"FRAUD\",\"status\":\"pending\",\"batch_id\":null,\"received_at\":\"ISO-8601 timestamp\"}\n400 invalid fields; 404 unavailable transaction; 409 conflicting key or already disputed; 503 retry same key; 429 with Retry-After: 1 when concurrent request cap is full",
           "request_label": "POST /api/chargebacks + Idempotency-Key",
           "response_label": "201 new / 200 replay; chargeback JSON",
-          "explanation": "The UI retains the key while a submission has an uncertain response. Amounts stay decimal strings at the HTTP boundary; Go parses an exact signed 64-bit integer. A full concurrency cap returns 429; submitting the same details keeps the same idempotency key.",
+          "explanation": "The browser creates a UUID as the idempotency key and sends it with the chargeback POST request.\n\nIf the connection drops or the request times out before a reply arrives, submit the same details again with the same key. That lets the API return the same chargeback instead of creating another one.\n\n201 means the API recorded the chargeback. A retry can return 200 with that same chargeback. Neither response means the dispute has been resolved.",
           "sources": [
             {
               "file": "src/nexo/static/ui.ts",
+              "symbol": "submitChargeback",
+              "status": "implemented",
+              "focus": "if (!pendingSubmission || pendingSubmission.body !== body)",
+              "context": 1,
+              "lines": 4,
+              "label": "Create the key in the browser",
+              "focus_end": "pendingSubmission = { body, key: crypto.randomUUID() }"
+            },
+            {
+              "file": "src/nexo/static/ui.ts",
+              "symbol": "submitChargeback",
+              "status": "implemented",
+              "focus": "const chargeback = await api<Chargeback>",
+              "context": 0,
+              "lines": 5,
+              "label": "Send the POST with that key",
+              "focus_end": "headers: { \"Idempotency-Key\": submission.key }"
+            },
+            {
+              "file": "src/nexo/static/ui.ts",
               "symbol": "api",
-              "status": "implemented"
-            },
-            {
-              "file": "internal/api/api.go",
-              "symbol": "validateRequest",
-              "status": "implemented"
-            },
-            {
-              "file": "internal/api/api.go",
-              "symbol": "ObserveAndLimit",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "const response = await fetch(",
+              "context": 2,
+              "lines": 4,
+              "label": "Make the HTTP request"
             }
           ],
           "mode": "synchronous",
-          "simplification": "Customer UI keeps a retry key only while this page remains open. One chargeback per transaction still prevents duplicates after a reload.",
+          "simplification": "The browser keeps this key while the page and account session stay open. Reloading loses the key; the database still allows only one chargeback per transaction.",
           "response_after": "create-commit"
         },
         {
           "id": "create-auth",
           "arrow": "api-db",
-          "label": "Authorize the customer",
+          "label": "Check who the customer is",
           "from": "api",
           "to": "postgres",
           "protocol": "pgx / SHA-256 token lookup",
@@ -388,12 +407,17 @@
           "response": "Customer principal, or HTTP 401/403",
           "request_label": "Bearer token \u2192 active token lookup",
           "response_label": "Customer identity + role / authentication error",
-          "explanation": "The database owns customer identity. Tokens are hashed at rest and never placed in a URL or browser storage.",
+          "explanation": "The API looks up the bearer token to find the customer and their role. Expired or revoked tokens do not get access. The database stores a hash of the token, not the token itself.",
           "sources": [
             {
               "file": "internal/auth/auth.go",
               "symbol": "Authenticate",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "err := pool.QueryRow(",
+              "context": 1,
+              "lines": 5,
+              "focus_end": "hex.EncodeToString(digest[:])",
+              "label": "Look up an active token"
             }
           ],
           "mode": "synchronous"
@@ -401,7 +425,7 @@
         {
           "id": "create-commit",
           "arrow": "api-db",
-          "label": "Commit intake and its audit event",
+          "label": "Save the chargeback and audit event",
           "from": "api",
           "to": "postgres",
           "protocol": "pgx transaction / unique constraints",
@@ -409,25 +433,36 @@
           "response": "Inserted ID or existing idempotent result after commit",
           "request_label": "INSERT chargeback + unique customer/key + transaction",
           "response_label": "COMMIT, then accepted chargeback ID",
-          "explanation": "The database enforces one chargeback per transaction and one request per customer/key. Concurrent losers read the winner. A trigger writes the acceptance audit event in the same transaction.",
+          "explanation": "The API saves the chargeback once. The database allows only one chargeback per transaction and one request per customer and idempotency key. If the same request arrives twice with the same key, one saves the row and the other reads that chargeback.\n\nThe acceptance audit event is saved in the same transaction. The API replies only after the commit succeeds.",
           "sources": [
             {
               "file": "internal/api/api.go",
               "symbol": "CreateChargeback",
               "status": "implemented",
-              "focus": "partitionHash :=",
-              "context": 1,
-              "lines": 28
+              "focus": "err = tx.QueryRow(r.Context(), `INSERT INTO chargebacks",
+              "context": 4,
+              "lines": 8,
+              "focus_end": "req.Reason, partition).Scan(&id)",
+              "label": "Assign a partition and insert once"
             },
             {
               "file": "migrations/001_initial.sql",
               "symbol": "chargebacks",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "transaction_id uuid NOT NULL UNIQUE",
+              "context": 1,
+              "lines": 11,
+              "focus_end": "UNIQUE (customer_id, idempotency_key)",
+              "label": "Enforce uniqueness in the database"
             },
             {
               "file": "migrations/001_initial.sql",
-              "symbol": "audit_chargeback",
-              "status": "implemented"
+              "symbol": "FUNCTION/audit_chargeback",
+              "status": "implemented",
+              "focus": "INSERT INTO audit_events(chargeback_id,event) VALUES (NEW.id,'chargeback.accepted');",
+              "context": 1,
+              "lines": 4,
+              "label": "Record acceptance in the same transaction"
             }
           ],
           "mode": "synchronous",
@@ -439,7 +474,7 @@
     {
       "id": "status",
       "name": "Read customer status",
-      "note": "Lists are bounded to the most recent 100 records. This first version does not yet provide cursor pagination.",
+      "note": "Lists show the most recent 100 records. Cursor pagination is not implemented.",
       "messages": [
         {
           "id": "status-http",
@@ -452,17 +487,26 @@
           "response": "200 {\"transactions\":[{\"id\":\"UUID\",\"network\":\"visa\",\"currency\":\"USD\",\"amount_minor\":\"1250\",\"disputed\":false}]}\n200 {\"chargebacks\":[{\"id\":\"UUID\",\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"currency\":\"USD\",\"network\":\"visa\",\"reason\":\"FRAUD\",\"status\":\"pending\",\"batch_id\":null,\"received_at\":\"ISO-8601 timestamp\"}]}\n200 {\"id\":\"UUID\",\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"currency\":\"USD\",\"network\":\"visa\",\"reason\":\"FRAUD\",\"status\":\"pending\",\"batch_id\":null,\"received_at\":\"ISO-8601 timestamp\"}\n404 if the ID is not owned by this customer",
           "request_label": "GET transactions / chargebacks / chargeback ID",
           "response_label": "200 bounded JSON / 404 not owned",
-          "explanation": "A customer sees only their imported transactions and chargebacks. The UI refreshes from the real API, not a local model.",
+          "explanation": "The browser asks the API for this customer\u2019s transactions and chargebacks. Refresh sends those requests again, so the page shows the latest saved status.",
           "sources": [
             {
-              "file": "internal/api/api.go",
-              "symbol": "ListTransactions",
-              "status": "implemented"
+              "file": "src/nexo/static/ui.ts",
+              "symbol": "loadCustomer",
+              "status": "implemented",
+              "focus": "api<{ transactions: Transaction[] }>",
+              "context": 1,
+              "lines": 4,
+              "focus_end": "api<{ chargebacks: Chargeback[] }>",
+              "label": "Request the customer\u2019s transactions and chargebacks"
             },
             {
-              "file": "internal/api/api.go",
-              "symbol": "GetChargeback",
-              "status": "implemented"
+              "file": "src/nexo/static/ui.ts",
+              "symbol": "api",
+              "status": "implemented",
+              "focus": "const response = await fetch(",
+              "context": 0,
+              "lines": 2,
+              "label": "Make the HTTP request"
             }
           ],
           "mode": "synchronous",
@@ -471,7 +515,7 @@
         {
           "id": "status-db",
           "arrow": "api-db",
-          "label": "Join immutable assignment to batch state",
+          "label": "Read this customer\u2019s chargeback status",
           "from": "api",
           "to": "postgres",
           "protocol": "pgx / parameterized SQL",
@@ -479,17 +523,26 @@
           "response": "Chargeback fields and COALESCE(batch.state, pending)",
           "request_label": "SELECT with customer ownership predicate",
           "response_label": "pending or current batch state",
-          "explanation": "Status comes directly from durable assignment and delivery state. A missing acknowledgement remains submitted or unknown, never acknowledged.",
+          "explanation": "The API reads the chargeback and its batch. No batch yet means pending; otherwise the batch supplies the status. Every query includes the customer ID, so a customer cannot read someone else\u2019s chargeback.\n\nWithout an acknowledgement, a sent file stays submitted or unknown.",
           "sources": [
             {
               "file": "internal/api/api.go",
               "symbol": "respondChargeback",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "err := s.Pool.QueryRow(",
+              "context": 1,
+              "lines": 5,
+              "label": "Read one chargeback owned by this customer"
             },
             {
               "file": "internal/api/api.go",
               "symbol": "ListChargebacks",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "s.queryJSON(",
+              "context": 0,
+              "lines": 3,
+              "focus_end": "customer(r))",
+              "label": "Read the customer\u2019s recent chargebacks"
             }
           ],
           "mode": "synchronous"
@@ -499,12 +552,12 @@
     {
       "id": "schedule",
       "name": "Schedule a six-hour slot",
-      "note": "Kubernetes CronJob is the scheduler. Missed slots can be replayed explicitly. Each run is bounded; an unfinished slot needs another run.",
+      "note": "Kubernetes runs the scheduler. Missed slots can be replayed explicitly. Each run has a limit; an unfinished slot needs another run.",
       "messages": [
         {
           "id": "schedule-launch",
           "arrow": "cron-job",
-          "label": "Launch bounded slot work",
+          "label": "Start the slot\u2019s Job",
           "from": "scheduler",
           "to": "builder",
           "protocol": "Kubernetes CronJob / Python CLI",
@@ -512,20 +565,35 @@
           "response": "Process exit and {claimed: integer, built: integer, complete: boolean} or {busy: true, claimed: 0, built: 0}",
           "request_label": "00, 06, 12, 18 UTC \u2192 schedule Job",
           "response_label": "Job exits; counts and completion status",
-          "explanation": "The cutoff is a six-hour UTC boundary. Rows committed too late for one scan remain unassigned and are eligible in a later slot.",
+          "explanation": "Kubernetes starts a Job at 00:00, 06:00, 12:00 and 18:00 UTC. Each Job collects chargebacks received before that slot\u2019s cutoff. A chargeback that arrives too late stays unassigned for a later slot.",
           "sources": [
             {
-              "file": "src/nexo/batching.py",
-              "symbol": "slot_cutoff",
-              "status": "implemented"
+              "file": "deploy/base/scheduler.yaml",
+              "symbol": "CronJob/schedule",
+              "status": "implemented",
+              "focus": "schedule: '0 */6 * * *'",
+              "context": 0,
+              "lines": 3,
+              "focus_end": "timeZone: Etc/UTC",
+              "label": "Start a Job four times a day"
+            },
+            {
+              "file": "deploy/base/scheduler.yaml",
+              "symbol": "CronJob/schedule",
+              "status": "implemented",
+              "focus": "command: [python, -m, nexo.cli, schedule]",
+              "context": 0,
+              "lines": 1,
+              "label": "Run the scheduler command"
             },
             {
               "file": "src/nexo/batching.py",
-              "symbol": "schedule",
+              "symbol": "slot_cutoff",
               "status": "implemented",
-              "focus": "locked =",
-              "context": 3,
-              "lines": 11
+              "focus": "return now.replace(",
+              "context": 1,
+              "lines": 2,
+              "label": "Find the current six-hour cutoff"
             }
           ],
           "mode": "asynchronous",
@@ -535,7 +603,7 @@
         {
           "id": "schedule-slot",
           "arrow": "builder-db",
-          "label": "Persist the slot and recover unfinished batches",
+          "label": "Save the slot and resume unfinished files",
           "from": "builder",
           "to": "postgres",
           "protocol": "psycopg / PostgreSQL advisory lock",
@@ -543,20 +611,34 @@
           "response": "Exclusive scheduler ownership; existing slot and bounded recovery list",
           "request_label": "INSERT slot; list unfinished building batches",
           "response_label": "Existing or new durable slot; recovery batch IDs",
-          "explanation": "Replaying a slot never resets membership. Unfinished file generation is resumed before new claims.",
+          "explanation": "The Job first takes a database lock so only one scheduler runs at a time. It records the slot, then finishes any batches whose file build stopped halfway. Replaying the slot keeps every existing batch assignment.",
           "sources": [
             {
               "file": "src/nexo/batching.py",
               "symbol": "schedule",
               "status": "implemented",
-              "focus": "INSERT INTO slots",
-              "context": 2,
-              "lines": 12
+              "focus": "locked = conn.execute(",
+              "context": 0,
+              "lines": 4,
+              "label": "Allow one active scheduler"
+            },
+            {
+              "file": "src/nexo/batching.py",
+              "symbol": "schedule",
+              "status": "implemented",
+              "focus": "conn.execute(\"INSERT INTO slots",
+              "context": 0,
+              "lines": 9,
+              "label": "Record the slot and resume unfinished files"
             },
             {
               "file": "migrations/001_initial.sql",
               "symbol": "slots",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "cutoff timestamptz PRIMARY KEY",
+              "context": 1,
+              "lines": 7,
+              "label": "Keep one record per slot"
             }
           ],
           "mode": "synchronous",
@@ -567,7 +649,7 @@
     {
       "id": "build",
       "name": "Claim rows and build a CSV",
-      "note": "CSV uses an explicit simulator contract, not a proprietary Visa/Mastercard file specification. Bounded memory holds at most one file.",
+      "note": "This CSV follows the documented simulator contract, not a proprietary Visa or Mastercard file specification. The Job holds at most one file in memory.",
       "messages": [
         {
           "id": "build-claim",
@@ -580,17 +662,37 @@
           "response": "Batch UUID and permanently assigned members, or no eligible rows",
           "request_label": "SELECT \u2026 FOR UPDATE SKIP LOCKED + assign batch_id",
           "response_label": "COMMIT batch and immutable membership",
-          "explanation": "Locking lets one claimant take a row. Assignment and the batch are committed together. Database triggers reject changing an assigned batch or its financial fields.",
+          "explanation": "The Job locks a limited number of unassigned chargebacks. Other claimers skip those rows. It creates a batch and assigns the rows in the same transaction.\n\nOnce a chargeback has a batch, the database refuses to move it to another one.",
           "sources": [
             {
               "file": "src/nexo/batching.py",
               "symbol": "claim_batch",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "rows = conn.execute(",
+              "context": 2,
+              "lines": 12,
+              "focus_end": "(cutoff, network, partition, limit)",
+              "label": "Lock eligible rows and skip rows another Job owns"
+            },
+            {
+              "file": "src/nexo/batching.py",
+              "symbol": "claim_batch",
+              "status": "implemented",
+              "focus": "\"UPDATE chargebacks SET batch_id=",
+              "context": 1,
+              "lines": 4,
+              "focus_end": "(batch_id, [row[\"id\"] for row in rows])",
+              "label": "Assign the claimed rows to this batch"
             },
             {
               "file": "migrations/001_initial.sql",
               "symbol": "protect_chargeback",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "IF OLD.batch_id IS NOT NULL",
+              "context": 1,
+              "lines": 4,
+              "focus_end": "RAISE EXCEPTION 'batch assignment is permanent'",
+              "label": "Prevent a second assignment"
             }
           ],
           "mode": "synchronous",
@@ -599,7 +701,7 @@
         {
           "id": "build-artifact",
           "arrow": "builder-s3",
-          "label": "Serialize deterministic CSV and store it",
+          "label": "Build and store the CSV",
           "from": "builder",
           "to": "storage",
           "protocol": "Python csv + boto3 S3 PutObject",
@@ -607,20 +709,27 @@
           "response": "S3 successful object write, or exception; generation retries use same key and exact bytes",
           "request_label": "PutObject: deterministic CSV + SHA-256 metadata",
           "response_label": "Object stored / retryable storage error",
-          "explanation": "Exact integer strings are serialized in a stable order. A crash after storage and before the database commit can only regenerate this batch, never new membership.",
+          "explanation": "The Job builds a CSV from the batch\u2019s fixed set of chargebacks and uploads it to S3. The batch ID determines the filename.\n\nIf the upload succeeds but the Job crashes before saving the result, the retry rebuilds the same bytes at the same object key.",
           "sources": [
-            {
-              "file": "src/nexo/batching.py",
-              "symbol": "csv_bytes",
-              "status": "implemented"
-            },
             {
               "file": "src/nexo/batching.py",
               "symbol": "build_batch",
               "status": "implemented",
-              "focus": "s3.put_object",
-              "context": 5,
-              "lines": 8
+              "focus": "s3.put_object(",
+              "context": 4,
+              "lines": 11,
+              "focus_end": "Metadata={\"sha256\": digest",
+              "label": "Upload this batch\u2019s CSV with boto3"
+            },
+            {
+              "file": "src/nexo/batching.py",
+              "symbol": "csv_bytes",
+              "status": "implemented",
+              "focus": "writer.writerow(HEADER)",
+              "context": 1,
+              "lines": 5,
+              "focus_end": "writer.writerow([str(row[field])",
+              "label": "Write the CSV header and rows"
             }
           ],
           "mode": "synchronous",
@@ -629,7 +738,7 @@
         {
           "id": "build-ready",
           "arrow": "builder-db",
-          "label": "Commit the file manifest",
+          "label": "Mark the file ready for delivery",
           "from": "builder",
           "to": "postgres",
           "protocol": "psycopg transaction",
@@ -637,20 +746,27 @@
           "response": "Committed manifest available to delivery workers",
           "request_label": "UPDATE ready + object key / digest / size",
           "response_label": "COMMIT; ready work visible to worker poll",
-          "explanation": "The worker cannot discover ready work until the manifest transaction commits. Database triggers prevent the artifact identity changing after building.",
+          "explanation": "After S3 stores the CSV, the Job saves its object key, hash and size and marks the batch ready. Delivery workers can pick it up after that transaction commits. The database then prevents anyone from changing which file this batch refers to.",
           "sources": [
             {
               "file": "src/nexo/batching.py",
               "symbol": "build_batch",
               "status": "implemented",
-              "focus": "UPDATE batches",
+              "focus": "\"\"\"UPDATE batches SET state=",
               "context": 1,
-              "lines": 10
+              "lines": 6,
+              "focus_end": "(key, digest, len(data), batch_id)",
+              "label": "Save the file details and mark the batch ready"
             },
             {
               "file": "migrations/001_initial.sql",
               "symbol": "protect_batch",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "(NEW.row_count, NEW.object_key, NEW.sha256, NEW.byte_count) IS DISTINCT FROM",
+              "context": 1,
+              "lines": 5,
+              "focus_end": "RAISE EXCEPTION 'published artifact is immutable'",
+              "label": "Keep the stored file identity unchanged"
             }
           ],
           "mode": "synchronous",
@@ -661,12 +777,12 @@
     {
       "id": "deliver",
       "name": "Deliver one file",
-      "note": "SFTP encrypts file transfer but does not provide exactly-once processing. Permanent assignment, one filename, durable publication intent and receiver deduplication supply separate guarantees.",
+      "note": "SFTP encrypts the transfer. It does not ensure a file is processed only once. Nexo keeps one permanent batch assignment and final filename, records when publication starts, and checks the receiver\u2019s evidence before retrying.",
       "messages": [
         {
           "id": "deliver-poll",
           "arrow": "worker-db",
-          "label": "Poll durable work and own one batch",
+          "label": "Find work and take one batch",
           "from": "worker",
           "to": "postgres",
           "protocol": "pgx / PostgreSQL advisory lock",
@@ -674,23 +790,34 @@
           "response": "Exclusive batch ownership and durable attempt UUID, or already owned",
           "request_label": "Poll due batches, lock one, record attempt",
           "response_label": "Batch manifest + attempt UUID",
-          "explanation": "A process holds a session advisory lock while it handles one batch. A dead worker releases the lock; the next owner records its old attempt as interrupted.",
+          "explanation": "The worker checks for batches that need delivery or another status check. It takes a database lock on one batch and records a delivery attempt before contacting the receiver.\n\nIf the worker dies, the lock is released. The next worker marks the unfinished attempt interrupted and takes over the same batch.",
           "sources": [
             {
               "file": "internal/delivery/worker.go",
               "symbol": "Run",
               "status": "implemented",
-              "focus": "LIMIT 20",
-              "context": 1,
-              "lines": 12
+              "focus": "rows, err := worker.Pool.Query(",
+              "context": 0,
+              "lines": 4,
+              "label": "Find up to 20 batches due for work"
             },
             {
               "file": "internal/delivery/worker.go",
               "symbol": "Process",
               "status": "implemented",
-              "focus": "pg_try_advisory_lock",
-              "context": 3,
-              "lines": 25
+              "focus": "if err = conn.QueryRow(ctx, `SELECT pg_try_advisory_lock",
+              "context": 1,
+              "lines": 4,
+              "label": "Allow one worker to own this batch"
+            },
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "Process",
+              "status": "implemented",
+              "focus": "`INSERT INTO delivery_attempts",
+              "context": 0,
+              "lines": 4,
+              "label": "Record the attempt before contacting the receiver"
             }
           ],
           "mode": "asynchronous",
@@ -699,7 +826,7 @@
         {
           "id": "deliver-fetch",
           "arrow": "worker-s3",
-          "label": "Read and verify the immutable artifact",
+          "label": "Download and check the CSV",
           "from": "worker",
           "to": "storage",
           "protocol": "aws-sdk-go-v2 / S3 GetObject",
@@ -707,12 +834,16 @@
           "response": "CSV bytes with exact byte count and SHA-256, or integrity conflict",
           "request_label": "GetObject for stored object key",
           "response_label": "Verified bytes / artifact integrity mismatch",
-          "explanation": "The delivery worker compares bytes against the durable database manifest rather than trusting object metadata.",
+          "explanation": "The worker downloads the CSV named in the batch record. It checks the file\u2019s size and hash against that record before sending anything to the receiver.",
           "sources": [
             {
               "file": "internal/delivery/clients.go",
               "symbol": "ReadArtifact",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "object, err := store.GetObject(",
+              "context": 0,
+              "lines": 13,
+              "label": "Download the CSV with the S3 SDK and check its bytes"
             }
           ],
           "mode": "synchronous"
@@ -720,7 +851,7 @@
         {
           "id": "deliver-temp",
           "arrow": "worker-sftp",
-          "label": "Open a pinned SSH session and upload temporary bytes",
+          "label": "Connect and upload a temporary file",
           "from": "worker",
           "to": "receiver",
           "protocol": "golang.org/x/crypto/ssh + pkg/sftp",
@@ -728,21 +859,28 @@
           "response": "Verified temporary file, or bounded transport/integrity error",
           "request_label": "SSH host-key check; write unique .tmp; read back",
           "response_label": "Matching SHA-256 / transport failure",
-          "explanation": "The receiver ignores temporary files. Interrupted writes can be retried using a new attempt filename before publication intent exists.",
+          "explanation": "The worker checks the receiver\u2019s SSH host key, then uploads to a temporary filename. The receiver ignores temporary files. The worker reads the bytes back to check the upload.\n\nAn interrupted temporary upload can be tried again with a new attempt filename, as long as publication has not started.",
           "sources": [
             {
               "file": "internal/delivery/clients.go",
               "symbol": "OpenSFTP",
               "status": "implemented",
+              "focus": "connection, channels, requests, err := ssh.NewClientConn(",
+              "context": 0,
+              "lines": 5,
+              "focus_end": "HostKeyCallback: verify, Timeout:",
+              "label": "Connect to the expected SSH server",
               "plumbing": true
             },
             {
               "file": "internal/delivery/worker.go",
               "symbol": "Publish",
               "status": "implemented",
-              "focus": "temp :=",
-              "context": 0,
-              "lines": 15
+              "focus": "file, err := remote.OpenFile(",
+              "context": 2,
+              "lines": 22,
+              "focus_end": "closeErr := file.Close()",
+              "label": "Upload a temporary file and read it back"
             }
           ],
           "mode": "synchronous",
@@ -751,7 +889,7 @@
         {
           "id": "deliver-intent",
           "arrow": "worker-db",
-          "label": "Commit publication intent before rename",
+          "label": "Record publication intent before renaming",
           "from": "worker",
           "to": "postgres",
           "protocol": "pgx / durable UPDATE",
@@ -759,20 +897,25 @@
           "response": "Exactly one changed row; publication fence is permanent",
           "request_label": "COMMIT publication_started=true, state=unknown + audit",
           "response_label": "Durable publication fence / changed-fence error",
-          "explanation": "Once this flag may be committed, any uncertain upload outcome must be reconciled. Absence of a final file is no longer permission to publish again.",
+          "explanation": "Before renaming the file, the worker records that publication has started and sets the batch to unknown. This record survives a crash.\n\nFrom here on, the worker must check what the receiver has. A missing final file does not prove the rename failed, so it cannot simply upload again.",
           "sources": [
             {
               "file": "internal/delivery/worker.go",
               "symbol": "Publish",
               "status": "implemented",
-              "focus": "result, err :=",
-              "context": 3,
-              "lines": 10
+              "focus": "result, err := conn.Exec(",
+              "context": 2,
+              "lines": 9,
+              "label": "Save publication intent before the remote rename"
             },
             {
               "file": "migrations/001_initial.sql",
-              "symbol": "audit_batch",
-              "status": "implemented"
+              "symbol": "FUNCTION/audit_batch",
+              "status": "implemented",
+              "focus": "INSERT INTO audit_events(batch_id,event) VALUES (NEW.id,'publication_intent');",
+              "context": 2,
+              "lines": 5,
+              "label": "Audit publication intent in the same commit"
             }
           ],
           "mode": "synchronous",
@@ -781,7 +924,7 @@
         {
           "id": "deliver-publish",
           "arrow": "worker-sftp",
-          "label": "Publish one final filename",
+          "label": "Rename to the final filename",
           "from": "worker",
           "to": "receiver",
           "protocol": "pkg/sftp Rename / simulator atomic link",
@@ -789,20 +932,26 @@
           "response": "Success, already-exists error or lost response; reconcile final file and acknowledgement; a verified final file changes unknown to submitted",
           "request_label": "Rename .tmp \u2192 {batch_id}.csv; never overwrite",
           "response_label": "Success / ambiguity \u2192 reconcile same identity",
-          "explanation": "The receiver exposes a complete immutable final file with an atomic no-replace operation. The final name is derived from the permanent batch ID.",
+          "explanation": "The worker renames the temporary file to {batch_id}.csv. The receiver makes the complete file visible in one step and refuses to replace an existing final file.\n\nIf the reply is lost, the worker checks this same filename and its acknowledgement.",
           "sources": [
             {
               "file": "internal/delivery/worker.go",
               "symbol": "Publish",
               "status": "implemented",
-              "focus": "return remote.Rename",
-              "context": 1,
-              "lines": 2
+              "focus": "return remote.Rename(",
+              "context": 0,
+              "lines": 1,
+              "label": "Publish the final filename through SFTP"
             },
             {
               "file": "src/nexo/simulator.py",
               "symbol": "SFTPFiles.rename",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "os.link(old, new)",
+              "context": 4,
+              "lines": 9,
+              "focus_end": "fsync_directory(new.parent)",
+              "label": "Make the final file visible without replacing another file"
             }
           ],
           "mode": "synchronous",
@@ -814,7 +963,7 @@
     {
       "id": "reconcile",
       "name": "Reconcile an ambiguous delivery",
-      "note": "Safety takes priority over automatic progress. If publication started and both final file and acknowledgement are absent, the batch stays unknown and needs receiver evidence; it is not republished. Once a final file was verified, later absence or transport failure preserves submitted; acknowledgement is still required.",
+      "note": "If publication started but neither the final file nor its acknowledgement is visible, Nexo waits for evidence from the receiver instead of publishing again. A file already verified as submitted stays submitted while waiting for acknowledgement.",
       "messages": [
         {
           "id": "reconcile-read",
@@ -827,17 +976,25 @@
           "response": "Matching ACK \u2192 acknowledged/rejected; matching final \u2192 submitted; mismatch \u2192 conflict; absent after intent \u2192 unknown; previously verified submitted status is preserved on later absence",
           "request_label": "Read ACK first; otherwise verify final CSV",
           "response_label": "acknowledged / rejected / submitted / conflict / unknown",
-          "explanation": "A timeout can hide a successful rename. Checking the same identity recovers known outcomes without inventing another file. Missing evidence is preserved as unknown. A later outage cannot erase an earlier verified submission.",
+          "explanation": "A timeout does not tell us whether the rename succeeded. The worker first looks for an acknowledgement. If there is none, it checks the final CSV against the saved hash and size.\n\nNo evidence after publication started means unknown. If the worker already verified the final file earlier, it keeps submitted even when a later check fails.",
           "sources": [
             {
               "file": "internal/delivery/worker.go",
               "symbol": "Reconcile",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "data, found, err := readRemote(remote, \"/acks/",
+              "context": 0,
+              "lines": 10,
+              "label": "Check the acknowledgement first"
             },
             {
               "file": "internal/delivery/worker.go",
-              "symbol": "ValidateAck",
-              "status": "implemented"
+              "symbol": "Reconcile",
+              "status": "implemented",
+              "focus": "data, found, err = readRemote(remote, \"/incoming/",
+              "context": 0,
+              "lines": 17,
+              "label": "Otherwise check the same final file"
             }
           ],
           "mode": "synchronous"
@@ -845,7 +1002,7 @@
         {
           "id": "reconcile-commit",
           "arrow": "worker-db",
-          "label": "Persist outcome and schedule another check",
+          "label": "Save the outcome and next check",
           "from": "worker",
           "to": "postgres",
           "protocol": "pgx transaction",
@@ -853,12 +1010,17 @@
           "response": "Durable status and attempt; next due check in 30 seconds for nonterminal work",
           "request_label": "UPDATE outcome + delivery attempt + next check",
           "response_label": "COMMIT; dashboard reflects uncertainty",
-          "explanation": "Delivery status and the attempt result commit together. Unknown is observable in the operations view and is never converted to success by a timer.",
+          "explanation": "The worker saves the batch status and the attempt result together. If it still needs an answer, it schedules another check in 30 seconds. The operations view shows unknown until there is evidence of what happened.",
           "sources": [
             {
               "file": "internal/delivery/worker.go",
               "symbol": "finish",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "_, err = tx.Exec(ctx, `UPDATE batches",
+              "context": 0,
+              "lines": 11,
+              "focus_end": "return tx.Commit(ctx)",
+              "label": "Commit the outcome, attempt and next check together"
             }
           ],
           "mode": "synchronous",
@@ -869,12 +1031,12 @@
     {
       "id": "acknowledge",
       "name": "Receiver acknowledgement",
-      "note": "The simulator stores its own receipt ledger and can inject rejection, delayed or missing acknowledgements, partial uploads, timeouts and disconnect after rename.",
+      "note": "The simulator keeps its own receipt records. Fault modes let you try rejection, late or missing acknowledgements, partial uploads, timeouts and a disconnect after rename.",
       "messages": [
         {
           "id": "ack-ingest",
           "arrow": "worker-sftp",
-          "label": "Receiver ingests the published CSV",
+          "label": "Receiver processes the final CSV",
           "from": "receiver",
           "to": "receiver",
           "protocol": "Python csv / SQLite transaction",
@@ -882,15 +1044,27 @@
           "response": "Durable accepted or rejected receipt, deduplicated by batch ID and chargeback ID",
           "request_label": "Background scan of final CSV \u2192 validate and deduplicate",
           "response_label": "Receipt ledger commit: accepted / rejected",
-          "explanation": "SQLite transactions are the receiver-side processing boundary. A chargeback ID already recorded from another file rejects the new file.",
+          "explanation": "The simulator reads final CSV files and records which chargebacks each file contains. If a chargeback already belongs to another received file, it rejects the new file. It saves the receipt and accepted membership together in SQLite.",
           "sources": [
             {
               "file": "src/nexo/simulator.py",
               "symbol": "Receiver.ingest",
               "status": "implemented",
-              "focus": "BEGIN IMMEDIATE",
+              "focus": "db.executemany(",
+              "context": 3,
+              "lines": 11,
+              "focus_end": "[(r[\"chargeback_id\"], batch_id) for r in rows]",
+              "label": "Reject chargeback IDs already received in another file"
+            },
+            {
+              "file": "src/nexo/simulator.py",
+              "symbol": "Receiver.ingest",
+              "status": "implemented",
+              "focus": "\"INSERT INTO receipts(batch_id",
               "context": 1,
-              "lines": 25
+              "lines": 14,
+              "focus_end": "time.time() + delay,",
+              "label": "Save the receiver\u2019s accepted or rejected receipt"
             }
           ],
           "mode": "asynchronous",
@@ -900,7 +1074,7 @@
         {
           "id": "ack-file",
           "arrow": "worker-sftp",
-          "label": "Write durable acknowledgement JSON",
+          "label": "Write the acknowledgement file",
           "from": "receiver",
           "to": "receiver",
           "protocol": "Python filesystem / fsync / atomic rename",
@@ -908,12 +1082,17 @@
           "response": "Complete JSON acknowledgement visible via SFTP; delayed or missing in fault modes",
           "request_label": "Receipt \u2192 temporary ACK \u2192 fsync + atomic rename",
           "response_label": "Durable /acks/{batch_id}.json",
-          "explanation": "Acknowledgements identify the exact bytes and number of rows. Missing acknowledgements remain pending on the Nexo side.",
+          "explanation": "The simulator writes an acknowledgement with the batch ID, file hash, row count and accepted or rejected status. It writes a temporary file first, then renames it so the worker cannot read half a reply. A delayed or missing acknowledgement keeps Nexo waiting.",
           "sources": [
             {
               "file": "src/nexo/simulator.py",
               "symbol": "Receiver.tick",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "json.dump(data, stream, sort_keys=True)",
+              "context": 2,
+              "lines": 8,
+              "focus_end": "fsync_directory(final.parent)",
+              "label": "Write and publish the complete acknowledgement"
             }
           ],
           "mode": "asynchronous",
@@ -922,7 +1101,7 @@
         {
           "id": "ack-match",
           "arrow": "worker-sftp",
-          "label": "Validate receiver evidence",
+          "label": "Check the receiver\u2019s acknowledgement",
           "from": "worker",
           "to": "receiver",
           "protocol": "pkg/sftp / encoding/json",
@@ -930,17 +1109,25 @@
           "response": "Validated acknowledgement, absent file, or conflict",
           "request_label": "Read and validate exact acknowledgement contract",
           "response_label": "Matching evidence / integrity conflict",
-          "explanation": "A receipt is trusted only when its batch identity and file manifest match. Rejection is a terminal outcome, not a trigger to assign chargebacks again.",
+          "explanation": "The worker checks that the acknowledgement names this batch and matches its file hash and row count. Only then does it accept the receiver\u2019s answer. Rejection ends this batch; it does not put the chargebacks into a new file.",
           "sources": [
             {
               "file": "internal/delivery/worker.go",
-              "symbol": "ValidateAck",
-              "status": "implemented"
+              "symbol": "Reconcile",
+              "status": "implemented",
+              "focus": "ack, err := ValidateAck(data, batch)",
+              "context": 1,
+              "lines": 9,
+              "label": "Read the receiver\u2019s answer only after validation"
             },
             {
               "file": "internal/delivery/worker.go",
-              "symbol": "Reconcile",
-              "status": "implemented"
+              "symbol": "ValidateAck",
+              "status": "implemented",
+              "focus": "if ack.Version != 1 ||",
+              "context": 0,
+              "lines": 3,
+              "label": "Match the acknowledgement to this exact file"
             }
           ],
           "mode": "synchronous"
@@ -948,7 +1135,7 @@
         {
           "id": "ack-commit",
           "arrow": "worker-db",
-          "label": "Commit acknowledged or rejected",
+          "label": "Save acknowledged or rejected",
           "from": "worker",
           "to": "postgres",
           "protocol": "pgx transaction / audit trigger",
@@ -956,17 +1143,27 @@
           "response": "Terminal batch state visible to customer and operations",
           "request_label": "UPDATE terminal state + acknowledgement + attempt",
           "response_label": "COMMIT; terminal state cannot be reset",
-          "explanation": "The customer status joins the same batch state. The database preserves terminal outcomes and append-only transition audit events.",
+          "explanation": "The worker saves acknowledged or rejected on the batch, along with the receiver\u2019s acknowledgement. Customers and operations read that same status. The database keeps the outcome and an audit record of the change.",
           "sources": [
             {
               "file": "internal/delivery/worker.go",
               "symbol": "finish",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "_, err = tx.Exec(ctx, `UPDATE batches",
+              "context": 0,
+              "lines": 11,
+              "focus_end": "return tx.Commit(ctx)",
+              "label": "Save the receiver\u2019s answer and complete the attempt"
             },
             {
               "file": "migrations/001_initial.sql",
-              "symbol": "audit_batch",
-              "status": "implemented"
+              "symbol": "FUNCTION/audit_batch",
+              "status": "implemented",
+              "focus": "INSERT INTO audit_events(batch_id,event,details)",
+              "context": 1,
+              "lines": 4,
+              "focus_end": "VALUES (NEW.id,'batch.'",
+              "label": "Record the batch\u2019s state change"
             }
           ],
           "mode": "synchronous",
@@ -977,12 +1174,12 @@
     {
       "id": "operations",
       "name": "Inspect operations and audit",
-      "note": "This small dashboard reads lifecycle counts, queue age, recent batches, attempts and audit records. It is not a full telemetry platform or an administrative mutation UI.",
+      "note": "The dashboard shows lifecycle counts, queue age, recent batches, attempts and audit records. It is read-only.",
       "messages": [
         {
           "id": "ops-http",
           "arrow": "browser-api",
-          "label": "Read operational evidence",
+          "label": "Request the operations dashboard",
           "from": "browser",
           "to": "api",
           "protocol": "HTTPS / JSON",
@@ -990,17 +1187,35 @@
           "response": "200 summary {chargebacks:{state:count},batches:{state:count},oldest_pending_seconds:number|null}\n200 {batches:[batch manifest]}\n200 {batch:manifest,attempts:[{id,batch_id,started_at,finished_at,outcome,detail}],events:[{id,chargeback_id,batch_id,event,created_at,details}]}",
           "request_label": "GET lifecycle summary / batches / batch detail",
           "response_label": "Counts + manifests + delivery attempts + audit",
-          "explanation": "Operations tokens have a separate role. No customer token can use these endpoints. The page displays actual persisted state.",
+          "explanation": "The operations page asks for lifecycle counts and recent batches. Selecting a batch fetches its file details, delivery attempts and audit events. These endpoints require an operations token; a customer token cannot use them.",
           "sources": [
             {
               "file": "src/nexo/static/ui.ts",
               "symbol": "loadOps",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "api<{ chargebacks: Record<string, number>;",
+              "context": 1,
+              "lines": 4,
+              "focus_end": "api<{ batches: Batch[] }>",
+              "label": "Request lifecycle counts and batches"
             },
             {
-              "file": "internal/api/api.go",
-              "symbol": "GetBatch",
-              "status": "implemented"
+              "file": "src/nexo/static/ui.ts",
+              "symbol": "showBatch",
+              "status": "implemented",
+              "focus": "const detail = await api<",
+              "context": 0,
+              "lines": 2,
+              "label": "Request one batch\u2019s delivery history"
+            },
+            {
+              "file": "src/nexo/static/ui.ts",
+              "symbol": "api",
+              "status": "implemented",
+              "focus": "const response = await fetch(",
+              "context": 0,
+              "lines": 2,
+              "label": "Make the HTTP request"
             }
           ],
           "mode": "synchronous",
@@ -1009,7 +1224,7 @@
         {
           "id": "ops-db",
           "arrow": "api-db",
-          "label": "Aggregate lifecycle and bounded details",
+          "label": "Read lifecycle counts and batch history",
           "from": "api",
           "to": "postgres",
           "protocol": "pgx / SQL",
@@ -1017,22 +1232,37 @@
           "response": "Counts, age in seconds, manifests with SHA-256 and bytes, attempts and audit events",
           "request_label": "SELECT grouped state + age + bounded records",
           "response_label": "Read-only operational snapshot",
-          "explanation": "The queue is visible without introducing a separate metrics service. Audit events link accepted chargebacks to their permanent batch and all delivery attempts. API request logs contain request ID, method, status and duration, without paths, credentials or request bodies.",
+          "explanation": "The API counts chargebacks and batches by status and shows how long the oldest unassigned chargeback has waited. Batch details link the file to its delivery attempts and audit events.\n\nRequest logs add the request ID, method, status and duration. They leave out credentials and request bodies.",
           "sources": [
             {
               "file": "internal/api/api.go",
               "symbol": "OpsSummary",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "s.queryJSON(",
+              "context": 0,
+              "lines": 5,
+              "focus_end": "'oldest_pending_seconds'",
+              "label": "Count each lifecycle state and the oldest waiting chargeback"
             },
             {
               "file": "internal/api/api.go",
               "symbol": "ListBatches",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "s.queryJSON(",
+              "context": 0,
+              "lines": 3,
+              "focus_end": "(SELECT * FROM batches ORDER BY",
+              "label": "Read the most recent batches"
             },
             {
               "file": "internal/api/api.go",
               "symbol": "GetBatch",
-              "status": "implemented"
+              "status": "implemented",
+              "focus": "err := s.Pool.QueryRow(",
+              "context": 0,
+              "lines": 5,
+              "focus_end": "FROM batches b WHERE b.id=$1",
+              "label": "Read the batch, attempts and audit events together"
             }
           ],
           "mode": "synchronous"

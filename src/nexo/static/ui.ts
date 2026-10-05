@@ -127,29 +127,40 @@ element<HTMLFormElement>("session").addEventListener("submit", event => {
 });
 element("clear-session").addEventListener("click", () => { token = ""; sessionVersion += 1; location.reload(); });
 element("refresh").addEventListener("click", () => void refresh());
+async function submitChargeback(event: SubmitEvent): Promise<void> {
+  event.preventDefault();
+  const body = JSON.stringify({
+    transaction_id: element<HTMLSelectElement>("transaction").value,
+    amount_minor: element<HTMLInputElement>("amount").value,
+    reason: element<HTMLSelectElement>("reason").value,
+  });
+  // Keep the same key after a lost response so retrying cannot create another chargeback.
+  if (!pendingSubmission || pendingSubmission.body !== body) {
+    pendingSubmission = { body, key: crypto.randomUUID() };
+  }
+  const submission = pendingSubmission;
+  const version = sessionVersion;
+  const button = element<HTMLButtonElement>("submit-chargeback"); button.disabled = true;
+  try {
+    const chargeback = await api<Chargeback>("/api/chargebacks", {
+      method: "POST",
+      body: submission.body,
+      headers: { "Idempotency-Key": submission.key },
+    });
+    if (version !== sessionVersion) return;
+    pendingSubmission = null;
+    element("submission").textContent = `Chargeback ${chargeback.id} accepted. Status: ${chargeback.status}.`;
+    element("submission").className = "success";
+    await refresh();
+  } catch (error) {
+    if (version === sessionVersion) { element("submission").textContent = `${String(error)}. If the response was lost, submit the same details again to retry safely.`; element("submission").className = "error"; }
+  } finally { if (version === sessionVersion) button.disabled = false; }
+}
 if (customer) {
   element<HTMLSelectElement>("transaction").addEventListener("change", () => {
     const selected = transactions.find(tx => tx.id === element<HTMLSelectElement>("transaction").value);
     if (selected) element<HTMLInputElement>("amount").value = selected.amount_minor;
   });
-  element<HTMLFormElement>("chargeback-form").addEventListener("submit", async event => {
-    event.preventDefault();
-    const body = JSON.stringify({ transaction_id: element<HTMLSelectElement>("transaction").value, amount_minor: element<HTMLInputElement>("amount").value, reason: element<HTMLSelectElement>("reason").value });
-    // Keep the same key after a lost response so retrying cannot create another chargeback.
-    if (!pendingSubmission || pendingSubmission.body !== body) pendingSubmission = { body, key: crypto.randomUUID() };
-    const submission = pendingSubmission;
-    const version = sessionVersion;
-    const button = element<HTMLButtonElement>("submit-chargeback"); button.disabled = true;
-    try {
-      const chargeback = await api<Chargeback>("/api/chargebacks", { method: "POST", body: submission.body, headers: { "Idempotency-Key": submission.key } });
-      if (version !== sessionVersion) return;
-      pendingSubmission = null;
-      element("submission").textContent = `Chargeback ${chargeback.id} accepted. Status: ${chargeback.status}.`;
-      element("submission").className = "success";
-      await refresh();
-    } catch (error) {
-      if (version === sessionVersion) { element("submission").textContent = `${String(error)}. If the response was lost, submit the same details again to retry safely.`; element("submission").className = "error"; }
-    } finally { if (version === sessionVersion) button.disabled = false; }
-  });
+  element<HTMLFormElement>("chargeback-form").addEventListener("submit", submitChargeback);
 }
 export {};

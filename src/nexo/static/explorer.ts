@@ -1,4 +1,4 @@
-type Source = { file: string; symbol: string; line?: number; code?: string; url?: string; status: string; plumbing?: boolean };
+type Source = { file: string; symbol: string; label?: string; line?: number; focus_line?: number; focus_end_line?: number; code?: string; url?: string; status: string; plumbing?: boolean };
 type Component = { id: string; name: string; language: string; deployment: string; scaling: string; status: string; sources: Source[] };
 type Message = { id: string; arrow: string; label: string; from: string; to: string; mode: string; request: string; response: string; durable?: string; protocol: string; explanation: string; simplification?: string; sources: Source[] };
 type Flow = { id: string; name: string; note: string; messages: Message[] };
@@ -38,10 +38,22 @@ function glossary(root: HTMLElement): void {
 }
 function sourcePanel(parent: HTMLElement, source: Source): void {
   if (source.status !== "implemented") { appendText(parent, "p", `${source.file} · ${source.symbol}: not implemented.`, "error"); return; }
+  if (source.label) appendText(parent, "h4", source.label, "source-label");
   const link = document.createElement("a"); link.className = "source-ref"; link.href = source.url ?? "#";
-  link.textContent = `${source.file}:${source.line} · ${source.symbol}${source.plumbing ? " · plumbing" : ""}`;
+  link.textContent = `${source.file}:${source.focus_line ?? source.line} · ${source.symbol} · Open in VS Code${source.plumbing ? " · plumbing" : ""}`;
   parent.append(link);
-  const pre = document.createElement("pre"); const code = document.createElement("code"); code.textContent = source.code ?? ""; pre.append(code); parent.append(pre);
+  const pre = document.createElement("pre"); pre.className = "source-code";
+  pre.setAttribute("aria-label", `${source.symbol}${source.focus_line ? `; highlighted lines ${source.focus_line} to ${source.focus_end_line}` : ""}`);
+  const code = document.createElement("code");
+  (source.code ?? "").split("\n").forEach((text, index) => {
+    const line = (source.line ?? 1) + index;
+    const row = document.createElement("span"); row.className = "code-line";
+    const focused = source.focus_line !== undefined && line >= source.focus_line && line <= (source.focus_end_line ?? source.focus_line);
+    row.classList.toggle("code-focus", focused);
+    const number = appendText(row, "span", String(line), "line-number"); number.setAttribute("aria-hidden", "true");
+    appendText(row, "span", text || " ", "line-text"); code.append(row);
+  });
+  pre.append(code); parent.append(pre);
 }
 function highlight(): void {
   const message = selected ? messages.get(selected) : undefined;
@@ -50,6 +62,7 @@ function highlight(): void {
     const active = node.dataset.message ? messages.get(node.dataset.message)?.arrow === message?.arrow : node.dataset.arrow === message?.arrow;
     const isPin = node.dataset.message ? node.dataset.message === pinMessage?.id : node.dataset.arrow === pinMessage?.arrow;
     node.classList.toggle("active", active); node.classList.toggle("pinned", isPin);
+    node.classList.toggle("selected", node.dataset.message === message?.id);
   });
 }
 function preview(id: string): void {
@@ -59,13 +72,16 @@ function preview(id: string): void {
   glossary(get("hop-title"));
   get("selection-state").textContent = pinned === id ? "Pinned" : pinned ? "Previewing · pinned selection returns on exit" : "Preview";
   const panel = get("code-panel"); panel.replaceChildren();
-  appendText(panel, "p", `${message.protocol} · ${message.mode}`);
-  appendText(panel, "p", message.explanation);
+  for (const paragraph of message.explanation.split("\n\n")) appendText(panel, "p", paragraph);
+  appendText(panel, "p", `${message.protocol} · ${message.mode}`, "muted hop-protocol");
   if (message.durable) appendText(panel, "p", `◆ Durable transition: ${message.durable}`, "success");
-  appendText(panel, "h3", "Request"); appendText(panel, "pre", message.request);
-  appendText(panel, "h3", "Response"); appendText(panel, "pre", message.response);
+  appendText(panel, "h3", "Where this happens");
+  if (message.sources.some(source => source.focus_line !== undefined)) appendText(panel, "p", "Highlighted lines perform this step. The surrounding code gives context.", "muted code-legend");
+  message.sources.forEach(source => sourcePanel(panel, source));
+  const contract = document.createElement("details"); appendText(contract, "summary", "Request and response");
+  appendText(contract, "h3", "Request"); appendText(contract, "pre", message.request);
+  appendText(contract, "h3", "Response"); appendText(contract, "pre", message.response); panel.append(contract);
   if (message.simplification) appendText(panel, "p", message.simplification, "simplification");
-  appendText(panel, "h3", "Running code"); message.sources.forEach(source => sourcePanel(panel, source));
   for (const id of new Set([message.from, message.to])) {
     const component = data.components.find(c => c.id === id);
     if (component) appendText(panel, "p", `${component.name}: ${component.language}; ${component.deployment}. Scaling: ${component.scaling}`, "muted");

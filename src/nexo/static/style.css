@@ -22,6 +22,14 @@ body.explorer { max-width: none; padding: 16px; } .explorer-grid { display: grid
 .diagram { overflow: auto; } .hop { cursor: pointer; } .hop .hit { stroke: transparent; stroke-width: 20px; fill: none; }
 .hop.active .ink { stroke: #0968ba; stroke-width: 3px; } .hop.active text { fill: #075492; font-weight: 600; }
 .hop.active .background { fill: #eaf4fc; } .hop.pinned .ink { stroke: #7241b0; } .hop:focus { outline: none; } .hop:focus .ink { stroke: #d98400; stroke-width: 4px; }
+.hop.selected .background { fill: #fff0b8; stroke: #936200; stroke-width: 1.5px; }
 .legend { font-size: 12px; } #selection-state { color: #5d378c; } .simplification { border-left: 3px solid #be9445; padding-left: 10px; }
 .source-ref { overflow-wrap: anywhere; } details { margin: 8px 0; } summary { cursor: pointer; }
+.source-label { margin: 16px 0 4px; font-size: .95rem; }
+.hop-protocol, .code-legend, .source-ref { font-size: 12px; }
+pre.source-code { padding: 8px 0; white-space: normal; }
+.code-line { display: flex; border-left: 3px solid transparent; padding: 0 8px 0 0; }
+.code-focus { background: #fff0b8; border-left-color: #936200; }
+.line-number { flex: 0 0 3.5em; padding-right: 10px; color: #60707c; text-align: right; user-select: none; }
+.line-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 @media (max-width: 1050px) { .explorer-grid { grid-template-columns: 1fr; } .explorer-grid section { max-height: none; } .diagram svg { min-width: 0; } }

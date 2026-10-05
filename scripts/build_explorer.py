@@ -77,14 +77,20 @@ def extract_symbol(path: Path, symbol: str) -> tuple[int, str]:
         end = brace_end(text, start)
         return text[:start].count("\n") + 1, text[start:end]
     if path.suffix == ".sql":
-        match = re.search(
-            r"^CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|FUNCTION|TRIGGER)\s+"
-            rf"(?:IF NOT EXISTS\s+)?{re.escape(symbol)}\b",
-            text,
-            re.MULTILINE | re.IGNORECASE,
+        kind, name = symbol.split("/", 1) if "/" in symbol else (None, symbol)
+        matches = list(
+            re.finditer(
+                r"^CREATE\s+(?:UNIQUE\s+)?(TABLE|INDEX|FUNCTION|TRIGGER)\s+"
+                rf"(?:IF NOT EXISTS\s+)?{re.escape(name)}\b",
+                text,
+                re.MULTILINE | re.IGNORECASE,
+            )
         )
-        if not match:
-            raise ValueError(f"Missing SQL symbol {symbol} in {path}")
+        if kind:
+            matches = [match for match in matches if match[1].lower() == kind.lower()]
+        if len(matches) != 1:
+            raise ValueError(f"Expected one SQL symbol {symbol} in {path}, found {len(matches)}")
+        match = matches[0]
         start = match.start()
         end = text.find(";", start) + 1
         if "$$" in text[start:end]:
@@ -115,20 +121,34 @@ def resolve_source(root: Path, source: dict, source_root: str) -> dict:
     if not path.is_relative_to(root.resolve()):
         raise ValueError(f"Source outside repository: {relative}")
     line, code = extract_symbol(path, source["symbol"])
+    if "focus_end" in source and "focus" not in source:
+        raise ValueError(f"Focus end requires focus: {relative}:{source['symbol']}")
     if "focus" in source:
         parts = code.splitlines()
         matches = [index for index, text in enumerate(parts) if source["focus"] in text]
         if len(matches) != 1:
             raise ValueError(f"Focus must match once: {relative}:{source['symbol']}")
-        offset = max(0, matches[0] - source.get("context", 2))
+        start = end = matches[0]
+        if "focus_end" in source:
+            ends = [index for index, text in enumerate(parts) if source["focus_end"] in text]
+            if len(ends) != 1 or ends[0] < start:
+                raise ValueError(
+                    f"Focus end must match once after focus: {relative}:{source['symbol']}"
+                )
+            end = ends[0]
+        result.update(focus_line=line + start, focus_end_line=line + end)
+        offset = max(0, start - source.get("context", 2))
+        excerpt_end = min(len(parts), offset + source.get("lines", 25))
+        if not offset <= start <= end < excerpt_end:
+            raise ValueError(f"Excerpt must contain focused lines: {relative}:{source['symbol']}")
         line += offset
-        code = "\n".join(parts[offset : offset + source.get("lines", 25)])
+        code = "\n".join(parts[offset:excerpt_end])
     target = quote(source_root.rstrip("/") + "/" + str(relative), safe="/")
     result.update(
         status="implemented",
         line=line,
         code=code,
-        url=f"vscode://file{target}:{line}",
+        url=f"vscode://file{target}:{result.get('focus_line', line)}",
     )
     return result
 
