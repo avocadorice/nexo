@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env
+.local/
+.coverage
+htmlcov/
+*.tfstate*
+.terraform/
+*.tfplan
+*.pem
+*.key
+.DS_Store
