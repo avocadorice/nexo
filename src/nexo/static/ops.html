@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nexo · Operations</title><link rel="stylesheet" href="style.css"><script type="module" src="build/ui.js"></script></head>
+<body data-page="ops"><header><h1>Nexo operations</h1><nav><a href="index.html">Customer</a><a href="ops.html" aria-current="page">Operations</a><a href="explorer.html">Explorer</a></nav></header>
+<p class="muted">Live database state. Unknown delivery outcomes need reconciliation; they are never counted as success.</p>
+<section><form id="session"><label>Operations bearer token <input id="token" type="password" autocomplete="off" spellcheck="false" required></label><button type="submit">Load operations</button> <button id="clear-session" type="button">Clear session</button> <button id="refresh" type="button" disabled>Refresh</button></form></section>
+<p id="notice" role="status" aria-live="polite"></p>
+<section><h2>Lifecycle and queue</h2><div id="summary"><p class="muted">Load operations to view current metrics.</p></div></section>
+<section><h2>Batches and files</h2><div class="scroll" id="batches"></div></section>
+<section id="batch-panel" hidden><h2>Batch detail</h2><div id="batch-detail"></div><h3>Delivery attempts</h3><div class="scroll" id="attempts"></div><h3>Audit events</h3><div class="scroll" id="events"></div></section>
+</body></html>

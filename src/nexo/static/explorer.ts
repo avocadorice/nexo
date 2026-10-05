@@ -1,0 +1,133 @@
+type Source = { file: string; symbol: string; line?: number; code?: string; url?: string; status: string; plumbing?: boolean };
+type Component = { id: string; name: string; language: string; deployment: string; scaling: string; status: string; sources: Source[] };
+type Message = { id: string; arrow: string; label: string; from: string; to: string; mode: string; request: string; response: string; durable?: string; protocol: string; explanation: string; simplification?: string; sources: Source[] };
+type Flow = { id: string; name: string; note: string; messages: Message[] };
+type Data = { components: Component[]; flows: Flow[]; glossary: Record<string, string> };
+const get = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+let data: Data;
+let currentFlow: Flow;
+let pinned: string | null = null;
+let selected: string | null = null;
+let flowRequest = 0;
+const messages = new Map<string, Message>();
+function appendText(parent: HTMLElement, tag: string, content: string, className = ""): HTMLElement {
+  const node = document.createElement(tag); node.textContent = content; node.className = className; parent.append(node); return node;
+}
+function glossary(root: HTMLElement): void {
+  const terms = Object.keys(data.glossary).sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(`\\b(${terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "gi");
+  const lookup = new Map(terms.map(term => [term.toLowerCase(), data.glossary[term] ?? ""]));
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if (node.parentElement?.closest("abbr, svg, a, button, select, script, style")) continue;
+    if (node.textContent?.trim()) nodes.push(node);
+  }
+  for (const node of nodes) {
+    const text = node.textContent ?? "";
+    const fragment = document.createDocumentFragment(); let previous = 0;
+    for (const match of text.matchAll(pattern)) {
+      const index = match.index ?? 0; fragment.append(document.createTextNode(text.slice(previous, index)));
+      const term = document.createElement("abbr"); term.textContent = match[0]; term.title = lookup.get(match[0].toLowerCase()) ?? "";
+      fragment.append(term); previous = index + match[0].length;
+    }
+    if (previous) { fragment.append(document.createTextNode(text.slice(previous))); node.replaceWith(fragment); }
+  }
+}
+function sourcePanel(parent: HTMLElement, source: Source): void {
+  if (source.status !== "implemented") { appendText(parent, "p", `${source.file} · ${source.symbol}: not implemented.`, "error"); return; }
+  const link = document.createElement("a"); link.className = "source-ref"; link.href = source.url ?? "#";
+  link.textContent = `${source.file}:${source.line} · ${source.symbol}${source.plumbing ? " · plumbing" : ""}`;
+  parent.append(link);
+  const pre = document.createElement("pre"); const code = document.createElement("code"); code.textContent = source.code ?? ""; pre.append(code); parent.append(pre);
+}
+function highlight(): void {
+  const message = selected ? messages.get(selected) : undefined;
+  const pinMessage = pinned ? messages.get(pinned) : undefined;
+  document.querySelectorAll<SVGGElement>(".hop").forEach(node => {
+    const active = node.dataset.message ? messages.get(node.dataset.message)?.arrow === message?.arrow : node.dataset.arrow === message?.arrow;
+    const isPin = node.dataset.message ? node.dataset.message === pinMessage?.id : node.dataset.arrow === pinMessage?.arrow;
+    node.classList.toggle("active", active); node.classList.toggle("pinned", isPin);
+  });
+}
+function preview(id: string): void {
+  const message = messages.get(id); if (!message) return;
+  selected = id;
+  get("hop-title").textContent = message.label;
+  get("selection-state").textContent = pinned === id ? "Pinned" : pinned ? "Previewing · pinned selection returns on exit" : "Preview";
+  const panel = get("code-panel"); panel.replaceChildren();
+  appendText(panel, "p", `${message.protocol} · ${message.mode}`);
+  appendText(panel, "p", message.explanation);
+  if (message.durable) appendText(panel, "p", `◆ Durable transition: ${message.durable}`, "success");
+  appendText(panel, "h3", "Request"); appendText(panel, "pre", message.request);
+  appendText(panel, "h3", "Response"); appendText(panel, "pre", message.response);
+  if (message.simplification) appendText(panel, "p", message.simplification, "simplification");
+  appendText(panel, "h3", "Running code"); message.sources.forEach(source => sourcePanel(panel, source));
+  for (const id of new Set([message.from, message.to])) {
+    const component = data.components.find(c => c.id === id);
+    if (component) appendText(panel, "p", `${component.name}: ${component.language}; ${component.deployment}. Scaling: ${component.scaling}`, "muted");
+  }
+  glossary(panel); highlight();
+}
+function bindHops(root: HTMLElement): void {
+  root.querySelectorAll<SVGGElement>(".hop").forEach(node => {
+    const resolve = (): Message | undefined => node.dataset.message ? messages.get(node.dataset.message) : currentFlow.messages.find(m => m.arrow === node.dataset.arrow) ?? data.flows.flatMap(flow => flow.messages).find(m => m.arrow === node.dataset.arrow);
+    const choose = async (pin: boolean): Promise<void> => {
+      const message = resolve(); if (!message) return;
+      if (pin) pinned = message.id;
+      const flow = data.flows.find(flow => flow.messages.some(item => item.id === message.id));
+      if (flow && currentFlow.id !== flow.id) await renderFlow(flow);
+      preview(message.id);
+    };
+    node.addEventListener("pointerenter", () => void choose(false));
+    node.addEventListener("focus", () => void choose(false));
+    node.addEventListener("click", () => void choose(true));
+    node.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void choose(true); } });
+    node.addEventListener("pointerleave", () => { if (pinned) { const flow = data.flows.find(f => f.messages.some(m => m.id === pinned)); if (flow && flow.id !== currentFlow.id) void renderFlow(flow).then(() => { if (pinned) preview(pinned); }); else preview(pinned); } });
+  });
+}
+async function loadSvg(file: string, target: HTMLElement): Promise<void> {
+  const response = await fetch(file); if (!response.ok) throw new Error(`Could not load ${file}`);
+  const xml = new DOMParser().parseFromString(await response.text(), "image/svg+xml");
+  if (xml.querySelector("parsererror")) throw new Error(`Invalid diagram: ${file}`);
+  target.replaceChildren(document.importNode(xml.documentElement, true)); bindHops(target);
+}
+async function renderFlow(flow: Flow): Promise<void> {
+  currentFlow = flow; const request = ++flowRequest;
+  get<HTMLSelectElement>("flow").value = flow.id;
+  get("flow-title").textContent = flow.name;
+  get("flow-note").textContent = flow.note;
+  const link = get<HTMLAnchorElement>("sequence-file"); link.href = `sequences/${flow.id}.svg`;
+  const temporary = document.createElement("div"); await loadSvg(link.href, temporary);
+  if (request !== flowRequest) return;
+  get("sequence").replaceChildren(...Array.from(temporary.childNodes));
+  glossary(get("flow-note")); highlight();
+}
+async function main(): Promise<void> {
+  const response = await fetch("explorer-data.json"); if (!response.ok) throw new Error("Explorer data is missing. Run python scripts/build_explorer.py.");
+  data = await response.json() as Data;
+  for (const flow of data.flows) {
+    get<HTMLSelectElement>("flow").add(new Option(flow.name, flow.id));
+    flow.messages.forEach(message => messages.set(message.id, message));
+  }
+  for (const [term, definition] of Object.entries(data.glossary)) { appendText(get("glossary"), "dt", term); appendText(get("glossary"), "dd", definition); }
+  for (const component of data.components) {
+    appendText(get("components"), "h3", component.name);
+    appendText(get("components"), "p", `${component.language} · ${component.deployment} · ${component.status}`);
+    appendText(get("components"), "p", component.scaling);
+    const details = document.createElement("details"); appendText(details, "summary", "Component source"); component.sources.forEach(source => sourcePanel(details, source)); get("components").append(details);
+  }
+  const first = data.flows[0]; if (!first) throw new Error("No mapped flows");
+  currentFlow = first;
+  await Promise.all([loadSvg("architecture.svg", get("architecture")), renderFlow(first)]);
+  if (first.messages[0]) { pinned = first.messages[0].id; preview(pinned); }
+  get<HTMLSelectElement>("flow").addEventListener("change", async event => {
+    const flow = data.flows.find(item => item.id === (event.target as HTMLSelectElement).value); if (!flow) return;
+    pinned = flow.messages[0]?.id ?? null; await renderFlow(flow); if (pinned) preview(pinned);
+  });
+  get("unpin").addEventListener("click", () => { pinned = null; get("selection-state").textContent = "Selection unpinned"; highlight(); });
+  glossary(document.body);
+}
+void main().catch(error => { get("notice").textContent = String(error); get("notice").className = "error"; });
+export {};

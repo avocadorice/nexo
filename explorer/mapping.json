@@ -1,0 +1,1013 @@
+{
+  "version": 1,
+  "description": "Single source for architecture arrows, flow messages, code references, language and deployment. Generated assets must not be edited by hand.",
+  "components": [
+    {
+      "id": "browser",
+      "name": "Customer / operations UI",
+      "language": "TypeScript",
+      "deployment": "Browser; assets from API Deployment",
+      "position": [
+        20,
+        20
+      ],
+      "sources": [
+        {
+          "file": "src/nexo/static/ui.ts",
+          "symbol": "api",
+          "status": "implemented"
+        },
+        {
+          "file": "deploy/base/api.yaml",
+          "symbol": "Deployment/api",
+          "status": "implemented",
+          "plumbing": true
+        }
+      ],
+      "scaling": "No background polling. Bounded API lists, manual refresh.",
+      "status": "implemented",
+      "external": false
+    },
+    {
+      "id": "api",
+      "name": "Chargeback API",
+      "language": "Go",
+      "deployment": "Deployment/api \u00b7 Service/api",
+      "position": [
+        315,
+        20
+      ],
+      "sources": [
+        {
+          "file": "internal/api/api.go",
+          "symbol": "New",
+          "status": "implemented",
+          "plumbing": true
+        },
+        {
+          "file": "deploy/base/api.yaml",
+          "symbol": "Deployment/api",
+          "status": "implemented",
+          "plumbing": true
+        }
+      ],
+      "scaling": "Replicate stateless API pods; bounded request body and PostgreSQL connection pool.",
+      "status": "implemented",
+      "external": false
+    },
+    {
+      "id": "postgres",
+      "name": "PostgreSQL + work queue",
+      "language": "SQL",
+      "deployment": "StatefulSet/postgres (local)",
+      "position": [
+        610,
+        20
+      ],
+      "sources": [
+        {
+          "file": "migrations/001_initial.sql",
+          "symbol": "chargebacks",
+          "status": "implemented"
+        },
+        {
+          "file": "migrations/001_initial.sql",
+          "symbol": "batches",
+          "status": "implemented"
+        },
+        {
+          "file": "deploy/local/postgres.yaml",
+          "symbol": "StatefulSet/postgres",
+          "status": "implemented",
+          "plumbing": true
+        }
+      ],
+      "scaling": "Four logical partitions; eligibility and due-work indexes. Physical sharding is not implemented. Managed cloud PostgreSQL is proposed, not provisioned.",
+      "status": "implemented",
+      "external": false
+    },
+    {
+      "id": "scheduler",
+      "name": "Four daily slots",
+      "language": "Python / Kubernetes YAML",
+      "deployment": "CronJob/schedule \u2192 bounded Job",
+      "position": [
+        20,
+        255
+      ],
+      "sources": [
+        {
+          "file": "src/nexo/batching.py",
+          "symbol": "slot_cutoff",
+          "status": "implemented"
+        },
+        {
+          "file": "deploy/base/scheduler.yaml",
+          "symbol": "CronJob/schedule",
+          "status": "implemented",
+          "plumbing": true
+        }
+      ],
+      "scaling": "00:00, 06:00, 12:00 and 18:00 UTC. Replays share durable slot and assignment records.",
+      "status": "implemented",
+      "external": false
+    },
+    {
+      "id": "builder",
+      "name": "Claim and build CSV",
+      "language": "Python",
+      "deployment": "Job from CronJob/schedule",
+      "position": [
+        315,
+        255
+      ],
+      "sources": [
+        {
+          "file": "src/nexo/batching.py",
+          "symbol": "schedule",
+          "status": "implemented"
+        },
+        {
+          "file": "deploy/base/scheduler.yaml",
+          "symbol": "CronJob/schedule",
+          "status": "implemented",
+          "plumbing": true
+        }
+      ],
+      "scaling": "Up to BATCH_MAX_ROWS rows per file and SCHEDULE_MAX_BATCHES per run. Advisory lock bounds active schedulers.",
+      "status": "implemented",
+      "external": false
+    },
+    {
+      "id": "storage",
+      "name": "CSV artifact storage",
+      "language": "S3 protocol",
+      "deployment": "StatefulSet/object-storage; S3 API",
+      "position": [
+        610,
+        255
+      ],
+      "sources": [
+        {
+          "file": "src/nexo/storage.py",
+          "symbol": "s3_client",
+          "status": "implemented",
+          "plumbing": true
+        },
+        {
+          "file": "deploy/local/object-storage.yaml",
+          "symbol": "StatefulSet/object-storage",
+          "status": "implemented",
+          "plumbing": true
+        }
+      ],
+      "scaling": "Objects have stable batch-derived keys; files are bounded at 10,000 rows / 4 MiB. Local provider: SeaweedFS. Cloud object storage is proposed, not provisioned.",
+      "status": "implemented",
+      "external": false
+    },
+    {
+      "id": "worker",
+      "name": "Delivery worker",
+      "language": "Go",
+      "deployment": "Deployment/worker",
+      "position": [
+        315,
+        485
+      ],
+      "sources": [
+        {
+          "file": "internal/delivery/worker.go",
+          "symbol": "Run",
+          "status": "implemented"
+        },
+        {
+          "file": "deploy/base/worker.yaml",
+          "symbol": "Deployment/worker",
+          "status": "implemented",
+          "plumbing": true
+        }
+      ],
+      "scaling": "Bounded due-work query and one active transfer per process. Scale replicas with a per-batch advisory lock.",
+      "status": "implemented",
+      "external": false
+    },
+    {
+      "id": "receiver",
+      "name": "Visa / Mastercard simulator",
+      "language": "Python",
+      "deployment": "Deployment/simulator; card-network",
+      "position": [
+        610,
+        485
+      ],
+      "sources": [
+        {
+          "file": "src/nexo/simulator.py",
+          "symbol": "serve",
+          "status": "implemented",
+          "plumbing": true
+        },
+        {
+          "file": "deploy/base/simulator.yaml",
+          "symbol": "Deployment/simulator",
+          "status": "implemented",
+          "plumbing": true
+        }
+      ],
+      "scaling": "One receiver with persistent volume and SQLite receipts. This is a simulator, not card-network certification.",
+      "status": "implemented",
+      "external": true
+    }
+  ],
+  "arrows": [
+    {
+      "id": "browser-api",
+      "from": "browser",
+      "to": "api",
+      "label": "HTTPS / JSON",
+      "path": "M 230 65 H 315",
+      "label_at": [
+        272,
+        48
+      ],
+      "mode": "synchronous"
+    },
+    {
+      "id": "api-db",
+      "from": "api",
+      "to": "postgres",
+      "label": "SQL transaction",
+      "path": "M 525 65 H 610",
+      "label_at": [
+        568,
+        47
+      ],
+      "mode": "synchronous"
+    },
+    {
+      "id": "cron-job",
+      "from": "scheduler",
+      "to": "builder",
+      "label": "cron \u2192 Job",
+      "path": "M 230 300 H 315",
+      "label_at": [
+        271,
+        282
+      ],
+      "mode": "asynchronous"
+    },
+    {
+      "id": "builder-db",
+      "from": "builder",
+      "to": "postgres",
+      "label": "claim + manifest",
+      "path": "M 420 255 V 177 H 715 V 110",
+      "label_at": [
+        565,
+        165
+      ],
+      "mode": "synchronous"
+    },
+    {
+      "id": "builder-s3",
+      "from": "builder",
+      "to": "storage",
+      "label": "PutObject",
+      "path": "M 525 300 H 610",
+      "label_at": [
+        567,
+        282
+      ],
+      "mode": "synchronous"
+    },
+    {
+      "id": "worker-db",
+      "from": "worker",
+      "to": "postgres",
+      "label": "poll + durable delivery state",
+      "path": "M 420 485 V 407 H 775 V 110",
+      "label_at": [
+        602,
+        397
+      ],
+      "mode": "synchronous"
+    },
+    {
+      "id": "worker-s3",
+      "from": "worker",
+      "to": "storage",
+      "label": "GetObject",
+      "path": "M 525 520 H 570 V 370 H 715 V 345",
+      "label_at": [
+        646,
+        360
+      ],
+      "mode": "synchronous"
+    },
+    {
+      "id": "worker-sftp",
+      "from": "worker",
+      "to": "receiver",
+      "label": "SFTP + receipt",
+      "path": "M 525 550 H 610",
+      "label_at": [
+        564,
+        572
+      ],
+      "mode": "synchronous"
+    }
+  ],
+  "flows": [
+    {
+      "id": "create",
+      "name": "Create a chargeback",
+      "note": "Synthetic imported transactions and provisioned, expiring tokens keep scope small. There is no card-number intake or identity-provider integration.",
+      "messages": [
+        {
+          "id": "create-auth",
+          "arrow": "api-db",
+          "label": "Authorize the customer",
+          "from": "api",
+          "to": "postgres",
+          "protocol": "pgx / SHA-256 token lookup",
+          "request": "SELECT customer_id, role FROM tokens WHERE hash = SHA256(bearer token), not revoked and not expired",
+          "response": "Customer principal, or HTTP 401/403",
+          "request_label": "Bearer token \u2192 active token lookup",
+          "response_label": "Customer identity + role / authentication error",
+          "explanation": "The database owns customer identity. Tokens are hashed at rest and never placed in a URL or browser storage.",
+          "sources": [
+            {
+              "file": "internal/auth/auth.go",
+              "symbol": "Authenticate",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous"
+        },
+        {
+          "id": "create-http",
+          "arrow": "browser-api",
+          "label": "Submit the dispute",
+          "from": "browser",
+          "to": "api",
+          "protocol": "HTTPS / JSON",
+          "request": "POST /api/chargebacks\nAuthorization: Bearer <token>\nIdempotency-Key: <stable UUID>\n{\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"reason\":\"FRAUD\"}",
+          "response": "201 Created (new) or 200 OK (replay)\n{\"id\":\"UUID\",\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"currency\":\"USD\",\"network\":\"visa\",\"reason\":\"FRAUD\",\"status\":\"pending\",\"batch_id\":null,\"received_at\":\"ISO-8601 timestamp\"}\n400 invalid fields; 404 unavailable transaction; 409 conflicting key or already disputed; 503 retry same key",
+          "request_label": "POST /api/chargebacks + Idempotency-Key",
+          "response_label": "201 new / 200 replay; chargeback JSON",
+          "explanation": "The UI retains the key while a submission has an uncertain response. Amounts stay decimal strings at the HTTP boundary; Go parses an exact signed 64-bit integer.",
+          "sources": [
+            {
+              "file": "src/nexo/static/ui.ts",
+              "symbol": "api",
+              "status": "implemented"
+            },
+            {
+              "file": "internal/api/api.go",
+              "symbol": "validateRequest",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous",
+          "simplification": "Customer UI keeps a retry key only while this page remains open. One chargeback per transaction still prevents duplicates after a reload."
+        },
+        {
+          "id": "create-commit",
+          "arrow": "api-db",
+          "label": "Commit intake and its audit event",
+          "from": "api",
+          "to": "postgres",
+          "protocol": "pgx transaction / unique constraints",
+          "request": "BEGIN; validate transaction ownership and amount; INSERT chargebacks ON CONFLICT DO NOTHING; COMMIT",
+          "response": "Inserted ID or existing idempotent result after commit",
+          "request_label": "INSERT chargeback + unique customer/key + transaction",
+          "response_label": "COMMIT, then accepted chargeback ID",
+          "explanation": "The database enforces one chargeback per transaction and one request per customer/key. Concurrent losers read the winner. A trigger writes the acceptance audit event in the same transaction.",
+          "sources": [
+            {
+              "file": "internal/api/api.go",
+              "symbol": "CreateChargeback",
+              "status": "implemented",
+              "focus": "partitionHash :=",
+              "context": 1,
+              "lines": 28
+            },
+            {
+              "file": "migrations/001_initial.sql",
+              "symbol": "chargebacks",
+              "status": "implemented"
+            },
+            {
+              "file": "migrations/001_initial.sql",
+              "symbol": "audit_chargeback",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous",
+          "durable": "Chargeback accepted + append-only audit event; partition fixed for life",
+          "simplification": "Partitions spread claim work logically within one PostgreSQL database; they are not physical shards."
+        }
+      ]
+    },
+    {
+      "id": "status",
+      "name": "Read customer status",
+      "note": "Lists are bounded to the most recent 100 records. This first version does not yet provide cursor pagination.",
+      "messages": [
+        {
+          "id": "status-http",
+          "arrow": "browser-api",
+          "label": "Read owned transactions and chargebacks",
+          "from": "browser",
+          "to": "api",
+          "protocol": "HTTPS / JSON",
+          "request": "GET /api/transactions\nGET /api/chargebacks\nGET /api/chargebacks/{id}\nAuthorization: Bearer <customer token>",
+          "response": "200 {\"transactions\":[{\"id\":\"UUID\",\"network\":\"visa\",\"currency\":\"USD\",\"amount_minor\":\"1250\",\"disputed\":false}]}\n200 {\"chargebacks\":[{\"id\":\"UUID\",\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"currency\":\"USD\",\"network\":\"visa\",\"reason\":\"FRAUD\",\"status\":\"pending\",\"batch_id\":null,\"received_at\":\"ISO-8601 timestamp\"}]}\n200 {\"id\":\"UUID\",\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"currency\":\"USD\",\"network\":\"visa\",\"reason\":\"FRAUD\",\"status\":\"pending\",\"batch_id\":null,\"received_at\":\"ISO-8601 timestamp\"}\n404 if the ID is not owned by this customer",
+          "request_label": "GET transactions / chargebacks / chargeback ID",
+          "response_label": "200 bounded JSON / 404 not owned",
+          "explanation": "A customer sees only their imported transactions and chargebacks. The UI refreshes from the real API, not a local model.",
+          "sources": [
+            {
+              "file": "internal/api/api.go",
+              "symbol": "ListTransactions",
+              "status": "implemented"
+            },
+            {
+              "file": "internal/api/api.go",
+              "symbol": "GetChargeback",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous"
+        },
+        {
+          "id": "status-db",
+          "arrow": "api-db",
+          "label": "Join immutable assignment to batch state",
+          "from": "api",
+          "to": "postgres",
+          "protocol": "pgx / parameterized SQL",
+          "request": "SELECT owned chargeback JOIN transaction LEFT JOIN batch WHERE chargeback.customer_id = authenticated customer",
+          "response": "Chargeback fields and COALESCE(batch.state, pending)",
+          "request_label": "SELECT with customer ownership predicate",
+          "response_label": "pending or current batch state",
+          "explanation": "Status comes directly from durable assignment and delivery state. A missing acknowledgement remains submitted or unknown, never acknowledged.",
+          "sources": [
+            {
+              "file": "internal/api/api.go",
+              "symbol": "respondChargeback",
+              "status": "implemented"
+            },
+            {
+              "file": "internal/api/api.go",
+              "symbol": "ListChargebacks",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous"
+        }
+      ]
+    },
+    {
+      "id": "schedule",
+      "name": "Schedule a six-hour slot",
+      "note": "Kubernetes CronJob is the scheduler. Missed slots can be replayed explicitly. Each run is bounded; an unfinished slot needs another run.",
+      "messages": [
+        {
+          "id": "schedule-launch",
+          "arrow": "cron-job",
+          "label": "Launch bounded slot work",
+          "from": "scheduler",
+          "to": "builder",
+          "protocol": "Kubernetes CronJob / Python CLI",
+          "request": "Cron schedule: 0 */6 * * *; timeZone: Etc/UTC\nRun nexo schedule [--cutoff <six-hour UTC boundary>]",
+          "response": "Process exit and {claimed: integer, built: integer, complete: boolean} or {busy: true, claimed: 0, built: 0}",
+          "request_label": "00, 06, 12, 18 UTC \u2192 schedule Job",
+          "response_label": "Job exits; counts and completion status",
+          "explanation": "The cutoff is a six-hour UTC boundary. Rows committed too late for one scan remain unassigned and are eligible in a later slot.",
+          "sources": [
+            {
+              "file": "src/nexo/batching.py",
+              "symbol": "slot_cutoff",
+              "status": "implemented"
+            },
+            {
+              "file": "src/nexo/batching.py",
+              "symbol": "schedule",
+              "status": "implemented",
+              "focus": "locked =",
+              "context": 3,
+              "lines": 11
+            }
+          ],
+          "mode": "asynchronous",
+          "simplification": "A small single active scheduler makes the learning path clear. Durable row claiming remains the correctness boundary."
+        },
+        {
+          "id": "schedule-slot",
+          "arrow": "builder-db",
+          "label": "Persist the slot and recover unfinished batches",
+          "from": "builder",
+          "to": "postgres",
+          "protocol": "psycopg / PostgreSQL advisory lock",
+          "request": "pg_try_advisory_lock(817203, 1); INSERT slots(cutoff) ON CONFLICT DO NOTHING; SELECT building batches LIMIT schedule_max_batches",
+          "response": "Exclusive scheduler ownership; existing slot and bounded recovery list",
+          "request_label": "INSERT slot; list unfinished building batches",
+          "response_label": "Existing or new durable slot; recovery batch IDs",
+          "explanation": "Replaying a slot never resets membership. Unfinished file generation is resumed before new claims.",
+          "sources": [
+            {
+              "file": "src/nexo/batching.py",
+              "symbol": "schedule",
+              "status": "implemented",
+              "focus": "INSERT INTO slots",
+              "context": 2,
+              "lines": 12
+            },
+            {
+              "file": "migrations/001_initial.sql",
+              "symbol": "slots",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous",
+          "durable": "Slot exists; building batches retain their original members"
+        }
+      ]
+    },
+    {
+      "id": "build",
+      "name": "Claim rows and build a CSV",
+      "note": "CSV uses an explicit simulator contract, not a proprietary Visa/Mastercard file specification. Bounded memory holds at most one file.",
+      "messages": [
+        {
+          "id": "build-claim",
+          "arrow": "builder-db",
+          "label": "Claim eligible rows once",
+          "from": "builder",
+          "to": "postgres",
+          "protocol": "psycopg transaction / FOR UPDATE SKIP LOCKED",
+          "request": "SELECT unassigned chargebacks received before cutoff, filtered by network + partition, LIMIT batch_max_rows FOR UPDATE SKIP LOCKED; INSERT batch; UPDATE batch_id; COMMIT",
+          "response": "Batch UUID and permanently assigned members, or no eligible rows",
+          "request_label": "SELECT \u2026 FOR UPDATE SKIP LOCKED + assign batch_id",
+          "response_label": "COMMIT batch and immutable membership",
+          "explanation": "Locking lets one claimant take a row. Assignment and the batch are committed together. Database triggers reject changing an assigned batch or its financial fields.",
+          "sources": [
+            {
+              "file": "src/nexo/batching.py",
+              "symbol": "claim_batch",
+              "status": "implemented"
+            },
+            {
+              "file": "migrations/001_initial.sql",
+              "symbol": "protect_chargeback",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous",
+          "durable": "Unassigned chargebacks \u2192 permanent batch membership; building batch created"
+        },
+        {
+          "id": "build-artifact",
+          "arrow": "builder-s3",
+          "label": "Serialize deterministic CSV and store it",
+          "from": "builder",
+          "to": "storage",
+          "protocol": "Python csv + boto3 S3 PutObject",
+          "request": "PutObject(Bucket, Key=\"exports/{network}/{slot}/{batch_id}.csv\", Body=<UTF-8 CSV>, Metadata={sha256,batch-id})\nHeader: chargeback_id,transaction_id,network,currency,amount_minor,reason\nRows sorted by chargeback ID; CRLF line endings",
+          "response": "S3 successful object write, or exception; generation retries use same key and exact bytes",
+          "request_label": "PutObject: deterministic CSV + SHA-256 metadata",
+          "response_label": "Object stored / retryable storage error",
+          "explanation": "Exact integer strings are serialized in a stable order. A crash after storage and before the database commit can only regenerate this batch, never new membership.",
+          "sources": [
+            {
+              "file": "src/nexo/batching.py",
+              "symbol": "csv_bytes",
+              "status": "implemented"
+            },
+            {
+              "file": "src/nexo/batching.py",
+              "symbol": "build_batch",
+              "status": "implemented",
+              "focus": "s3.put_object",
+              "context": 5,
+              "lines": 8
+            }
+          ],
+          "mode": "synchronous",
+          "simplification": "Application identity and digest checks protect the artifact. Object-lock retention and a certified card-network format are outside this deployment."
+        },
+        {
+          "id": "build-ready",
+          "arrow": "builder-db",
+          "label": "Commit the file manifest",
+          "from": "builder",
+          "to": "postgres",
+          "protocol": "psycopg transaction",
+          "request": "UPDATE batches SET state=ready, object_key, sha256, byte_count; INSERT file_ready audit event; COMMIT",
+          "response": "Committed manifest available to delivery workers",
+          "request_label": "UPDATE ready + object key / digest / size",
+          "response_label": "COMMIT; ready work visible to worker poll",
+          "explanation": "The worker cannot discover ready work until the manifest transaction commits. Database triggers prevent the artifact identity changing after building.",
+          "sources": [
+            {
+              "file": "src/nexo/batching.py",
+              "symbol": "build_batch",
+              "status": "implemented",
+              "focus": "UPDATE batches",
+              "context": 1,
+              "lines": 10
+            },
+            {
+              "file": "migrations/001_initial.sql",
+              "symbol": "protect_batch",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous",
+          "durable": "building \u2192 ready with immutable file manifest and audit event"
+        }
+      ]
+    },
+    {
+      "id": "deliver",
+      "name": "Deliver one file",
+      "note": "SFTP encrypts file transfer but does not provide exactly-once processing. Permanent assignment, one filename, durable publication intent and receiver deduplication supply separate guarantees.",
+      "messages": [
+        {
+          "id": "deliver-poll",
+          "arrow": "worker-db",
+          "label": "Poll durable work and own one batch",
+          "from": "worker",
+          "to": "postgres",
+          "protocol": "pgx / PostgreSQL advisory lock",
+          "request": "SELECT ready, unknown, submitted batches due now LIMIT 20; pg_try_advisory_lock(batch ID); INSERT delivery_attempts",
+          "response": "Exclusive batch ownership and durable attempt UUID, or already owned",
+          "request_label": "Poll due batches, lock one, record attempt",
+          "response_label": "Batch manifest + attempt UUID",
+          "explanation": "A process holds a session advisory lock while it handles one batch. A dead worker releases the lock; the next owner records its old attempt as interrupted.",
+          "sources": [
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "Run",
+              "status": "implemented",
+              "focus": "LIMIT 20",
+              "context": 1,
+              "lines": 12
+            },
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "Process",
+              "status": "implemented",
+              "focus": "pg_try_advisory_lock",
+              "context": 3,
+              "lines": 25
+            }
+          ],
+          "mode": "asynchronous",
+          "durable": "Delivery attempt recorded before external I/O"
+        },
+        {
+          "id": "deliver-fetch",
+          "arrow": "worker-s3",
+          "label": "Read and verify the immutable artifact",
+          "from": "worker",
+          "to": "storage",
+          "protocol": "aws-sdk-go-v2 / S3 GetObject",
+          "request": "GetObject(Bucket, Key from database manifest), read at most 4 MiB + 1 byte",
+          "response": "CSV bytes with exact byte count and SHA-256, or integrity conflict",
+          "request_label": "GetObject for stored object key",
+          "response_label": "Verified bytes / artifact integrity mismatch",
+          "explanation": "The delivery worker compares bytes against the durable database manifest rather than trusting object metadata.",
+          "sources": [
+            {
+              "file": "internal/delivery/clients.go",
+              "symbol": "ReadArtifact",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous"
+        },
+        {
+          "id": "deliver-temp",
+          "arrow": "worker-sftp",
+          "label": "Open a pinned SSH session and upload temporary bytes",
+          "from": "worker",
+          "to": "receiver",
+          "protocol": "golang.org/x/crypto/ssh + pkg/sftp",
+          "request": "Connect using known_hosts host-key verification; OpenFile(/incoming/.{batch_id}.{attempt_id}.tmp, WRONLY|CREATE|EXCL); copy bytes; close; read back",
+          "response": "Verified temporary file, or bounded transport/integrity error",
+          "request_label": "SSH host-key check; write unique .tmp; read back",
+          "response_label": "Matching SHA-256 / transport failure",
+          "explanation": "The receiver ignores temporary files. Interrupted writes can be retried using a new attempt filename before publication intent exists.",
+          "sources": [
+            {
+              "file": "internal/delivery/clients.go",
+              "symbol": "OpenSFTP",
+              "status": "implemented",
+              "plumbing": true
+            },
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "Publish",
+              "status": "implemented",
+              "focus": "temp :=",
+              "context": 0,
+              "lines": 15
+            }
+          ],
+          "mode": "synchronous",
+          "simplification": "Simulator authentication uses a generated password. Production bank transport identity and key rotation need separate integration."
+        },
+        {
+          "id": "deliver-intent",
+          "arrow": "worker-db",
+          "label": "Commit publication intent before rename",
+          "from": "worker",
+          "to": "postgres",
+          "protocol": "pgx / durable UPDATE",
+          "request": "UPDATE batches SET publication_started=true WHERE id=$1 AND state=ready AND NOT publication_started",
+          "response": "Exactly one changed row; publication fence is permanent",
+          "request_label": "COMMIT publication_started=true",
+          "response_label": "Durable publication fence / changed-fence error",
+          "explanation": "Once this flag may be committed, any uncertain upload outcome must be reconciled. Absence of a final file is no longer permission to publish again.",
+          "sources": [
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "Publish",
+              "status": "implemented",
+              "focus": "result, err :=",
+              "context": 3,
+              "lines": 10
+            },
+            {
+              "file": "migrations/001_initial.sql",
+              "symbol": "audit_batch",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous",
+          "durable": "publication_started=false \u2192 true and audit event committed in one transaction"
+        },
+        {
+          "id": "deliver-publish",
+          "arrow": "worker-sftp",
+          "label": "Publish one final filename",
+          "from": "worker",
+          "to": "receiver",
+          "protocol": "pkg/sftp Rename / simulator atomic link",
+          "request": "Rename(/incoming/.{batch_id}.{attempt_id}.tmp, /incoming/{batch_id}.csv), without replacement",
+          "response": "Success, already-exists error or lost response; reconcile final file and acknowledgement",
+          "request_label": "Rename .tmp \u2192 {batch_id}.csv; never overwrite",
+          "response_label": "Success / ambiguity \u2192 reconcile same identity",
+          "explanation": "The receiver exposes a complete immutable final file with an atomic no-replace operation. The final name is derived from the permanent batch ID.",
+          "sources": [
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "Publish",
+              "status": "implemented",
+              "focus": "return remote.Rename",
+              "context": 1,
+              "lines": 2
+            },
+            {
+              "file": "src/nexo/simulator.py",
+              "symbol": "SFTPFiles.rename",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous",
+          "durable": "Receiver final file becomes durable before success response",
+          "simplification": "No-replace durable publication is explicitly part of this simulator contract. Real partner SFTP capabilities and retention must be agreed before integration."
+        }
+      ]
+    },
+    {
+      "id": "reconcile",
+      "name": "Reconcile an ambiguous delivery",
+      "note": "Safety takes priority over automatic progress. If publication started and both final file and acknowledgement are absent, the batch stays unknown and needs receiver evidence; it is not republished. Once a final file was verified, later absence or transport failure preserves submitted; acknowledgement is still required.",
+      "messages": [
+        {
+          "id": "reconcile-read",
+          "arrow": "worker-sftp",
+          "label": "Read acknowledgement, then final file",
+          "from": "worker",
+          "to": "receiver",
+          "protocol": "pkg/sftp / bounded read / SHA-256",
+          "request": "Read /acks/{batch_id}.json first; if absent, read /incoming/{batch_id}.csv; compare identity, digest, row count and size",
+          "response": "Matching ACK \u2192 acknowledged/rejected; matching final \u2192 submitted; mismatch \u2192 conflict; absent after intent \u2192 unknown; previously verified submitted status is preserved on later absence",
+          "request_label": "Read ACK first; otherwise verify final CSV",
+          "response_label": "acknowledged / rejected / submitted / conflict / unknown",
+          "explanation": "A timeout can hide a successful rename. Checking the same identity recovers known outcomes without inventing another file. Missing evidence is preserved as unknown. A later outage cannot erase an earlier verified submission.",
+          "sources": [
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "Reconcile",
+              "status": "implemented"
+            },
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "ValidateAck",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous"
+        },
+        {
+          "id": "reconcile-commit",
+          "arrow": "worker-db",
+          "label": "Persist outcome and schedule another check",
+          "from": "worker",
+          "to": "postgres",
+          "protocol": "pgx transaction",
+          "request": "UPDATE batch state, acknowledgement, safe last_error, next_attempt_at; UPDATE delivery_attempt outcome; COMMIT",
+          "response": "Durable status and attempt; next due check in 30 seconds for nonterminal work",
+          "request_label": "UPDATE outcome + delivery attempt + next check",
+          "response_label": "COMMIT; dashboard reflects uncertainty",
+          "explanation": "Delivery status and the attempt result commit together. Unknown is observable in the operations view and is never converted to success by a timer.",
+          "sources": [
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "finish",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous",
+          "durable": "ready / unknown / submitted \u2192 reconciled state and completed attempt"
+        }
+      ]
+    },
+    {
+      "id": "acknowledge",
+      "name": "Receiver acknowledgement",
+      "note": "The simulator stores its own receipt ledger and can inject rejection, delayed or missing acknowledgements, partial uploads, timeouts and disconnect after rename.",
+      "messages": [
+        {
+          "id": "ack-ingest",
+          "arrow": "worker-sftp",
+          "label": "Receiver ingests the published CSV",
+          "from": "receiver",
+          "to": "receiver",
+          "protocol": "Python csv / SQLite transaction",
+          "request": "Scan final .csv only; validate header, UUIDs, network, integer amount and reason; INSERT receipt and unique chargeback membership",
+          "response": "Durable accepted or rejected receipt, deduplicated by batch ID and chargeback ID",
+          "request_label": "Background scan of final CSV \u2192 validate and deduplicate",
+          "response_label": "Receipt ledger commit: accepted / rejected",
+          "explanation": "SQLite transactions are the receiver-side processing boundary. A chargeback ID already recorded from another file rejects the new file.",
+          "sources": [
+            {
+              "file": "src/nexo/simulator.py",
+              "symbol": "Receiver.ingest",
+              "status": "implemented",
+              "focus": "BEGIN IMMEDIATE",
+              "context": 1,
+              "lines": 25
+            }
+          ],
+          "mode": "asynchronous",
+          "durable": "Receiver receipt + unique chargeback membership committed",
+          "simplification": "The simulator ledger is deliberately separate from Nexo PostgreSQL and is not a real card-network decision system."
+        },
+        {
+          "id": "ack-file",
+          "arrow": "worker-sftp",
+          "label": "Write durable acknowledgement JSON",
+          "from": "receiver",
+          "to": "receiver",
+          "protocol": "Python filesystem / fsync / atomic rename",
+          "request": "Write /acks/{batch_id}.json via temporary file\n{\"version\":1,\"batch_id\":\"UUID\",\"sha256\":\"64 lowercase hex\",\"row_count\":1,\"status\":\"accepted|rejected\",\"reason\":null}",
+          "response": "Complete JSON acknowledgement visible via SFTP; delayed or missing in fault modes",
+          "request_label": "Receipt \u2192 temporary ACK \u2192 fsync + atomic rename",
+          "response_label": "Durable /acks/{batch_id}.json",
+          "explanation": "Acknowledgements identify the exact bytes and number of rows. Missing acknowledgements remain pending on the Nexo side.",
+          "sources": [
+            {
+              "file": "src/nexo/simulator.py",
+              "symbol": "Receiver.tick",
+              "status": "implemented"
+            }
+          ],
+          "mode": "asynchronous",
+          "durable": "Durable acknowledgement file published"
+        },
+        {
+          "id": "ack-match",
+          "arrow": "worker-sftp",
+          "label": "Validate receiver evidence",
+          "from": "worker",
+          "to": "receiver",
+          "protocol": "pkg/sftp / encoding/json",
+          "request": "GET /acks/{batch_id}.json; strict JSON fields; expected version=1, batch ID, SHA-256, row_count, accepted/rejected status",
+          "response": "Validated acknowledgement, absent file, or conflict",
+          "request_label": "Read and validate exact acknowledgement contract",
+          "response_label": "Matching evidence / integrity conflict",
+          "explanation": "A receipt is trusted only when its batch identity and file manifest match. Rejection is a terminal outcome, not a trigger to assign chargebacks again.",
+          "sources": [
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "ValidateAck",
+              "status": "implemented"
+            },
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "Reconcile",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous"
+        },
+        {
+          "id": "ack-commit",
+          "arrow": "worker-db",
+          "label": "Commit acknowledged or rejected",
+          "from": "worker",
+          "to": "postgres",
+          "protocol": "pgx transaction / audit trigger",
+          "request": "UPDATE batch state acknowledged|rejected and acknowledgement JSON; complete delivery attempt; COMMIT",
+          "response": "Terminal batch state visible to customer and operations",
+          "request_label": "UPDATE terminal state + acknowledgement + attempt",
+          "response_label": "COMMIT; terminal state cannot be reset",
+          "explanation": "The customer status joins the same batch state. The database preserves terminal outcomes and append-only transition audit events.",
+          "sources": [
+            {
+              "file": "internal/delivery/worker.go",
+              "symbol": "finish",
+              "status": "implemented"
+            },
+            {
+              "file": "migrations/001_initial.sql",
+              "symbol": "audit_batch",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous",
+          "durable": "submitted / unknown \u2192 acknowledged or rejected; audited"
+        }
+      ]
+    },
+    {
+      "id": "operations",
+      "name": "Inspect operations and audit",
+      "note": "This small dashboard reads lifecycle counts, queue age, recent batches, attempts and audit records. It is not a full telemetry platform or an administrative mutation UI.",
+      "messages": [
+        {
+          "id": "ops-http",
+          "arrow": "browser-api",
+          "label": "Read operational evidence",
+          "from": "browser",
+          "to": "api",
+          "protocol": "HTTPS / JSON",
+          "request": "GET /api/ops/summary\nGET /api/ops/batches\nGET /api/ops/batches/{id}\nAuthorization: Bearer <operations token>",
+          "response": "200 summary {chargebacks:{state:count},batches:{state:count},oldest_pending_seconds:number|null}\n200 {batches:[batch manifest]}\n200 {batch:manifest,attempts:[{id,batch_id,started_at,finished_at,outcome,detail}],events:[{id,chargeback_id,batch_id,event,created_at,details}]}",
+          "request_label": "GET lifecycle summary / batches / batch detail",
+          "response_label": "Counts + manifests + delivery attempts + audit",
+          "explanation": "Operations tokens have a separate role. No customer token can use these endpoints. The page displays actual persisted state.",
+          "sources": [
+            {
+              "file": "src/nexo/static/ui.ts",
+              "symbol": "loadOps",
+              "status": "implemented"
+            },
+            {
+              "file": "internal/api/api.go",
+              "symbol": "GetBatch",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous"
+        },
+        {
+          "id": "ops-db",
+          "arrow": "api-db",
+          "label": "Aggregate lifecycle and bounded details",
+          "from": "api",
+          "to": "postgres",
+          "protocol": "pgx / SQL",
+          "request": "COUNT chargebacks grouped by pending or batch state; COUNT batches by state; oldest unassigned received_at; bounded recent batches, attempts and audit events",
+          "response": "Counts, age in seconds, manifests with SHA-256 and bytes, attempts and audit events",
+          "request_label": "SELECT grouped state + age + bounded records",
+          "response_label": "Read-only operational snapshot",
+          "explanation": "The queue is visible without introducing a separate metrics service. Audit events link accepted chargebacks to their permanent batch and all delivery attempts.",
+          "sources": [
+            {
+              "file": "internal/api/api.go",
+              "symbol": "OpsSummary",
+              "status": "implemented"
+            },
+            {
+              "file": "internal/api/api.go",
+              "symbol": "ListBatches",
+              "status": "implemented"
+            },
+            {
+              "file": "internal/api/api.go",
+              "symbol": "GetBatch",
+              "status": "implemented"
+            }
+          ],
+          "mode": "synchronous"
+        }
+      ]
+    }
+  ]
+}

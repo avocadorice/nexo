@@ -1,0 +1,7 @@
+{
+  "name": "nexo-browser",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {"check": "tsc --noEmit", "build": "tsc"},
+  "devDependencies": {"typescript": "5.9.3"}
+}

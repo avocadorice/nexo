@@ -13,3 +13,8 @@ htmlcov/
 *.pem
 *.key
 .DS_Store
+explorer/node_modules/
+src/nexo/static/build/
+src/nexo/static/explorer-data.json
+src/nexo/static/architecture.svg
+src/nexo/static/sequences/
