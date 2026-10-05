@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -57,7 +58,7 @@ func New(pool *pgxpool.Pool, partitions int, staticDir string) http.Handler {
 			http.Redirect(w, r, "/static/index.html", http.StatusTemporaryRedirect)
 		})
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return ObserveAndLimit(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'")
@@ -65,7 +66,7 @@ func New(pool *pgxpool.Pool, partitions int, staticDir string) http.Handler {
 		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 		defer cancel()
 		mux.ServeHTTP(w, r.WithContext(ctx))
-	})
+	}), 200)
 }
 
 func (s *Server) authorize(role string, next http.HandlerFunc) http.Handler {
@@ -313,4 +314,39 @@ func (s *Server) queryJSON(w http.ResponseWriter, r *http.Request, query string,
 		return
 	}
 	writeJSON(w, 200, json.RawMessage(body))
+}
+
+// ObserveAndLimit bounds queued work before it reaches the database connection pool.
+func ObserveAndLimit(next http.Handler, maximum int) http.Handler {
+	slots := make(chan struct{}, maximum)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+		default:
+			w.Header().Set("Retry-After", "1")
+			fail(w, http.StatusTooManyRequests, "server busy; retry with the same idempotency key")
+			return
+		}
+		id := newID()
+		w.Header().Set("X-Request-ID", id)
+		started := time.Now()
+		response := &observedResponse{ResponseWriter: w, status: 200}
+		next.ServeHTTP(response, r)
+		slog.Info("http_request", "request_id", id, "method", r.Method, "status", response.status, "duration_ms", time.Since(started).Milliseconds())
+	})
+}
+
+type observedResponse struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *observedResponse) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,6 +29,7 @@ func positiveEnv(name string, fallback, maximum int) int {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -47,7 +49,7 @@ func main() {
 	if staticDir == "" {
 		staticDir = "src/nexo/static"
 	}
-	server := &http.Server{Addr: addr, Handler: api.New(pool, positiveEnv("PARTITION_COUNT", 4, 64), staticDir), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
+	server := &http.Server{Addr: addr, Handler: api.New(pool, positiveEnv("PARTITION_COUNT", 4, 256), staticDir), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
