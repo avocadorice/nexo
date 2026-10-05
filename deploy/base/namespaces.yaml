@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexo
+  labels:
+    app.kubernetes.io/part-of: nexo
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: card-network
+  labels:
+    app.kubernetes.io/part-of: nexo-simulator
+    pod-security.kubernetes.io/enforce: restricted

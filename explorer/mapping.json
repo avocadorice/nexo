@@ -49,9 +49,14 @@
           "symbol": "Deployment/api",
           "status": "implemented",
           "plumbing": true
+        },
+        {
+          "file": "internal/api/api.go",
+          "symbol": "ObserveAndLimit",
+          "status": "implemented"
         }
       ],
-      "scaling": "Replicate stateless API pods; bounded request body and PostgreSQL connection pool.",
+      "scaling": "Replicate stateless API pods. A 200-request in-flight cap returns HTTP 429 before queueing at the bounded database connection pool; request bodies are limited to 4 KiB.",
       "status": "implemented",
       "external": false
     },
@@ -331,10 +336,10 @@
           "to": "api",
           "protocol": "HTTPS / JSON",
           "request": "POST /api/chargebacks\nAuthorization: Bearer <token>\nIdempotency-Key: <stable UUID>\n{\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"reason\":\"FRAUD\"}",
-          "response": "201 Created (new) or 200 OK (replay)\n{\"id\":\"UUID\",\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"currency\":\"USD\",\"network\":\"visa\",\"reason\":\"FRAUD\",\"status\":\"pending\",\"batch_id\":null,\"received_at\":\"ISO-8601 timestamp\"}\n400 invalid fields; 404 unavailable transaction; 409 conflicting key or already disputed; 503 retry same key",
+          "response": "201 Created (new) or 200 OK (replay)\n{\"id\":\"UUID\",\"transaction_id\":\"UUID\",\"amount_minor\":\"1250\",\"currency\":\"USD\",\"network\":\"visa\",\"reason\":\"FRAUD\",\"status\":\"pending\",\"batch_id\":null,\"received_at\":\"ISO-8601 timestamp\"}\n400 invalid fields; 404 unavailable transaction; 409 conflicting key or already disputed; 503 retry same key; 429 with Retry-After: 1 when concurrent request cap is full",
           "request_label": "POST /api/chargebacks + Idempotency-Key",
           "response_label": "201 new / 200 replay; chargeback JSON",
-          "explanation": "The UI retains the key while a submission has an uncertain response. Amounts stay decimal strings at the HTTP boundary; Go parses an exact signed 64-bit integer.",
+          "explanation": "The UI retains the key while a submission has an uncertain response. Amounts stay decimal strings at the HTTP boundary; Go parses an exact signed 64-bit integer. A full concurrency cap returns 429; submitting the same details keeps the same idempotency key.",
           "sources": [
             {
               "file": "src/nexo/static/ui.ts",
@@ -344,6 +349,11 @@
             {
               "file": "internal/api/api.go",
               "symbol": "validateRequest",
+              "status": "implemented"
+            },
+            {
+              "file": "internal/api/api.go",
+              "symbol": "ObserveAndLimit",
               "status": "implemented"
             }
           ],
@@ -991,7 +1001,7 @@
           "response": "Counts, age in seconds, manifests with SHA-256 and bytes, attempts and audit events",
           "request_label": "SELECT grouped state + age + bounded records",
           "response_label": "Read-only operational snapshot",
-          "explanation": "The queue is visible without introducing a separate metrics service. Audit events link accepted chargebacks to their permanent batch and all delivery attempts.",
+          "explanation": "The queue is visible without introducing a separate metrics service. Audit events link accepted chargebacks to their permanent batch and all delivery attempts. API request logs contain request ID, method, status and duration, without paths, credentials or request bodies.",
           "sources": [
             {
               "file": "internal/api/api.go",

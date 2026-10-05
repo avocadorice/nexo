@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+  - postgres.yaml
+  - object-storage.yaml
+patches:
+  - target:
+      kind: ConfigMap
+      name: nexo-config
+    patch: |-
+      - op: add
+        path: /data/S3_ENDPOINT_URL
+        value: http://object-storage.nexo.svc.cluster.local:8333

@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: nexo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: worker}
+  template:
+    metadata:
+      labels: {app: worker}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: worker
+          image: nexo:local
+          imagePullPolicy: IfNotPresent
+          command: [/app/nexo-worker]
+          envFrom:
+            - configMapRef: {name: nexo-config}
+            - secretRef: {name: nexo-secrets}
+          volumeMounts:
+            - {name: database-ca, mountPath: /etc/nexo/db, readOnly: true}
+            - {name: ssh-trust, mountPath: /run/secrets, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: '1', memory: 512Mi}
+      volumes:
+        - name: database-ca
+          configMap: {name: database-ca, optional: true}
+        - name: ssh-trust
+          secret: {secretName: sftp-trust}
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}

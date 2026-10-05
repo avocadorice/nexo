@@ -1,0 +1,5 @@
+name               = "nexo-yourname"
+region             = "nyc3"
+kubernetes_version = "REPLACE-with-exact-slug-from-doctl"
+admin_cidrs        = ["REPLACE-with-your-public-IP/32"]
+worker_count       = 2

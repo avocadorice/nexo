@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: nexo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: api}
+  template:
+    metadata:
+      labels: {app: api}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api
+          image: nexo:local
+          imagePullPolicy: IfNotPresent
+          command: [/app/nexo-api]
+          ports:
+            - {name: http, containerPort: 8080}
+          envFrom:
+            - configMapRef: {name: nexo-config}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: nexo-secrets, key: DATABASE_URL}
+          volumeMounts:
+            - {name: database-ca, mountPath: /etc/nexo/db, readOnly: true}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: '1', memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            initialDelaySeconds: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+      volumes:
+        - name: database-ca
+          configMap: {name: database-ca, optional: true}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: nexo
+spec:
+  selector: {app: api}
+  ports:
+    - {name: http, port: 80, targetPort: http}

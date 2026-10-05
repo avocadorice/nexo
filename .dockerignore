@@ -1,0 +1,15 @@
+.git
+.local
+.venv
+**/node_modules
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.env
+*.pem
+*.key
+**/*.tfstate*
+**/*.tfplan
+**/.terraform
+**/*.tfvars
+**/*.auto.tfvars

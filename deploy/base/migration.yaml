@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: nexo
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels: {app: migrate}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: migrate
+          image: nexo:local
+          imagePullPolicy: IfNotPresent
+          command: [python, -m, nexo.cli, migrate]
+          envFrom:
+            - configMapRef: {name: nexo-config}
+            - secretRef: {name: migration-secrets}
+          volumeMounts:
+            - {name: database-ca, mountPath: /etc/nexo/db, readOnly: true}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: '1', memory: 256Mi}
+      volumes:
+        - name: database-ca
+          configMap: {name: database-ca, optional: true}

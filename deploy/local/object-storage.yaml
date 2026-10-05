@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: object-storage
+  namespace: nexo
+spec:
+  selector: {app: object-storage}
+  ports:
+    - {name: s3, port: 8333, targetPort: 8333}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: object-storage
+  namespace: nexo
+spec:
+  serviceName: object-storage
+  replicas: 1
+  selector:
+    matchLabels: {app: object-storage}
+  template:
+    metadata:
+      labels: {app: object-storage}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: object-storage
+          image: chrislusf/seaweedfs:4.48
+          command: [weed, mini, '-dir=/data']
+          envFrom:
+            - secretRef: {name: object-storage-secrets}
+          env:
+            - {name: S3_BUCKET, value: nexo-files}
+          ports:
+            - {name: s3, containerPort: 8333}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            tcpSocket: {port: s3}
+            initialDelaySeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 512Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 5Gi}

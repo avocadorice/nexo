@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: schedule
+  namespace: nexo
+spec:
+  schedule: '0 */6 * * *'
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 21600
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 21000
+      template:
+        metadata:
+          labels: {app: schedule}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: schedule
+              image: nexo:local
+              imagePullPolicy: IfNotPresent
+              command: [python, -m, nexo.cli, schedule]
+              envFrom:
+                - configMapRef: {name: nexo-config}
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef: {name: nexo-secrets, key: DATABASE_URL}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef: {name: nexo-secrets, key: AWS_ACCESS_KEY_ID}
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef: {name: nexo-secrets, key: AWS_SECRET_ACCESS_KEY}
+              volumeMounts:
+                - {name: database-ca, mountPath: /etc/nexo/db, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: 100m, memory: 128Mi}
+                limits: {cpu: '1', memory: 512Mi}
+          volumes:
+            - name: database-ca
+              configMap: {name: database-ca, optional: true}
+            - name: tmp
+              emptyDir: {sizeLimit: 256Mi}
