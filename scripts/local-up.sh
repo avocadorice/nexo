@@ -55,9 +55,12 @@ kind load docker-image nexo:local --name nexo
 "${K[@]}" apply -f deploy/local/postgres.yaml -f deploy/local/object-storage.yaml
 "${K[@]}" -n nexo rollout status statefulset/postgres --timeout=180s
 "${K[@]}" -n nexo rollout status statefulset/object-storage --timeout=180s
+"${K[@]}" create --dry-run=client -k deploy/local -o json | python3 scripts/prepare_manifests.py .local/local-manifests
+"${K[@]}" apply -f .local/local-manifests/prerequisites.json
 "${K[@]}" -n nexo delete job migrate --ignore-not-found
-"${K[@]}" apply -k deploy/local
+"${K[@]}" apply -f .local/local-manifests/migration.json
 "${K[@]}" -n nexo wait --for=condition=complete job/migrate --timeout=180s
+"${K[@]}" apply -f .local/local-manifests/workloads.json
 "${K[@]}" -n nexo rollout restart deployment/api deployment/worker
 "${K[@]}" -n card-network rollout restart deployment/simulator
 "${K[@]}" -n nexo rollout status deployment/api --timeout=180s

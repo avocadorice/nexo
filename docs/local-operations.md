@@ -55,7 +55,7 @@ The database and object store survive pod replacement through PersistentVolumeCl
 
 ## Scaling knobs and local limits
 
-The shared ConfigMap sets `PARTITION_COUNT`, `BATCH_MAX_ROWS`, `SCHEDULE_MAX_BATCHES`, database connection limits, and worker polling interval. The partition count forms part of durable data identity; do not change it on an existing dataset without a migration. Jobs cap work per run and can resume through database state. Increase worker replicas only when the database and recipient can handle the concurrent requests.
+The shared ConfigMap sets `PARTITION_COUNT`, `BATCH_MAX_ROWS`, `SCHEDULE_MAX_BATCHES`, database connection limits, and worker polling interval. The partition count affects newly accepted requests. Existing rows keep their stored partition IDs; the scheduler discovers those IDs so reducing the configured count does not strand older rows. This is logical distribution within one database, not physical sharding. Jobs cap work per run and can resume through database state. Increase worker replicas only when the database and recipient can handle the concurrent requests.
 
 The local cluster uses one node and single instances of PostgreSQL/SeaweedFS. Its persistent volumes live inside the kind node, so deleting the cluster destroys them. Local PostgreSQL uses one role and unencrypted cluster-local connections; cloud connections use verified TLS and separate migration/runtime roles. The local S3 credentials have administrative scope within the single local server; cloud keys are scoped to one bucket.
 
@@ -68,3 +68,5 @@ NetworkPolicies express the intended ingress boundaries, including worker-only S
 ```
 
 This removes only the `nexo` kind cluster and all its local test data. It does not stop the Docker engine or touch DigitalOcean. Local credentials remain in `.local/` for the next startup. [Cloud deployment and teardown](../infra/digitalocean/README.md) use separate commands and kubeconfig.
+
+If this session started the isolated Colima VM, `colima -p nexo stop` releases its running resources after cluster teardown. Benchmark PostgreSQL containers and port-forwards are separate test tools; stop them when finished.

@@ -10,6 +10,7 @@ def s3_client(settings):
         endpoint_url=settings.endpoint,
         region_name=settings.region,
         config=Config(
+            request_checksum_calculation="when_required",
             connect_timeout=5,
             read_timeout=30,
             retries={"max_attempts": 3},

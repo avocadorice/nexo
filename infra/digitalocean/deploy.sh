@@ -74,9 +74,12 @@ done
 "${K[@]}" -n nexo create secret generic sftp-trust --from-file=.local/cloud/known_hosts --dry-run=client -o yaml | "${K[@]}" apply -f -
 "${K[@]}" -n card-network create secret generic simulator-secrets --from-env-file=.local/cloud/simulator.env --dry-run=client -o yaml | "${K[@]}" apply -f -
 "${K[@]}" -n card-network create secret generic simulator-host-key --from-file=.local/cloud/ssh_host_key --dry-run=client -o yaml | "${K[@]}" apply -f -
+"${K[@]}" create --dry-run=client -k .local/cloud/overlay -o json | python3 scripts/prepare_manifests.py .local/cloud/manifests
+"${K[@]}" apply -f .local/cloud/manifests/prerequisites.json
 "${K[@]}" -n nexo delete job migrate --ignore-not-found
-"${K[@]}" apply -k .local/cloud/overlay
+"${K[@]}" apply -f .local/cloud/manifests/migration.json
 "${K[@]}" -n nexo wait --for=condition=complete job/migrate --timeout=300s
+"${K[@]}" apply -f .local/cloud/manifests/workloads.json
 "${K[@]}" -n nexo rollout status deployment/api --timeout=300s
 "${K[@]}" -n nexo rollout status deployment/worker --timeout=300s
 "${K[@]}" -n card-network rollout status deployment/simulator --timeout=300s
