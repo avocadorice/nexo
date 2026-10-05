@@ -9,6 +9,7 @@ let currentFlow: Flow;
 let pinned: string | null = null;
 let selected: string | null = null;
 let flowRequest = 0;
+let selectionRequest = 0;
 const messages = new Map<string, Message>();
 function appendText(parent: HTMLElement, tag: string, content: string, className = ""): HTMLElement {
   const node = document.createElement(tag); node.textContent = content; node.className = className; parent.append(node); return node;
@@ -55,6 +56,7 @@ function preview(id: string): void {
   const message = messages.get(id); if (!message) return;
   selected = id;
   get("hop-title").textContent = message.label;
+  glossary(get("hop-title"));
   get("selection-state").textContent = pinned === id ? "Pinned" : pinned ? "Previewing · pinned selection returns on exit" : "Preview";
   const panel = get("code-panel"); panel.replaceChildren();
   appendText(panel, "p", `${message.protocol} · ${message.mode}`);
@@ -74,17 +76,27 @@ function bindHops(root: HTMLElement): void {
   root.querySelectorAll<SVGGElement>(".hop").forEach(node => {
     const resolve = (): Message | undefined => node.dataset.message ? messages.get(node.dataset.message) : currentFlow.messages.find(m => m.arrow === node.dataset.arrow) ?? data.flows.flatMap(flow => flow.messages).find(m => m.arrow === node.dataset.arrow);
     const choose = async (pin: boolean): Promise<void> => {
+      const request = ++selectionRequest;
       const message = resolve(); if (!message) return;
       if (pin) pinned = message.id;
       const flow = data.flows.find(flow => flow.messages.some(item => item.id === message.id));
       if (flow && currentFlow.id !== flow.id) await renderFlow(flow);
-      preview(message.id);
+      if (request === selectionRequest) preview(message.id);
     };
     node.addEventListener("pointerenter", () => void choose(false));
     node.addEventListener("focus", () => void choose(false));
     node.addEventListener("click", () => void choose(true));
     node.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void choose(true); } });
-    node.addEventListener("pointerleave", () => { if (pinned) { const flow = data.flows.find(f => f.messages.some(m => m.id === pinned)); if (flow && flow.id !== currentFlow.id) void renderFlow(flow).then(() => { if (pinned) preview(pinned); }); else preview(pinned); } });
+    const restore = async (): Promise<void> => {
+      const request = ++selectionRequest;
+      const id = pinned;
+      if (!id) return;
+      const flow = data.flows.find(f => f.messages.some(m => m.id === id));
+      if (flow && flow.id !== currentFlow.id) await renderFlow(flow);
+      if (request === selectionRequest) preview(id);
+    };
+    node.addEventListener("pointerleave", () => void restore());
+    node.addEventListener("blur", () => void restore());
   });
 }
 async function loadSvg(file: string, target: HTMLElement): Promise<void> {
@@ -97,6 +109,7 @@ async function renderFlow(flow: Flow): Promise<void> {
   currentFlow = flow; const request = ++flowRequest;
   get<HTMLSelectElement>("flow").value = flow.id;
   get("flow-title").textContent = flow.name;
+  glossary(get("flow-title"));
   get("flow-note").textContent = flow.note;
   const link = get<HTMLAnchorElement>("sequence-file"); link.href = `sequences/${flow.id}.svg`;
   const temporary = document.createElement("div"); await loadSvg(link.href, temporary);
@@ -124,9 +137,15 @@ async function main(): Promise<void> {
   if (first.messages[0]) { pinned = first.messages[0].id; preview(pinned); }
   get<HTMLSelectElement>("flow").addEventListener("change", async event => {
     const flow = data.flows.find(item => item.id === (event.target as HTMLSelectElement).value); if (!flow) return;
+    selectionRequest += 1;
     pinned = flow.messages[0]?.id ?? null; await renderFlow(flow); if (pinned) preview(pinned);
   });
-  get("unpin").addEventListener("click", () => { pinned = null; get("selection-state").textContent = "Selection unpinned"; highlight(); });
+  get<HTMLSelectElement>("diagram-zoom").addEventListener("change", event => {
+    document.body.classList.remove("zoom-125", "zoom-150", "zoom-200");
+    const zoom = (event.target as HTMLSelectElement).value;
+    if (zoom !== "100") document.body.classList.add(`zoom-${zoom}`);
+  });
+  get("unpin").addEventListener("click", () => { selectionRequest += 1; pinned = null; get("selection-state").textContent = "Selection unpinned"; highlight(); });
   glossary(document.body);
 }
 void main().catch(error => { get("notice").textContent = String(error); get("notice").className = "error"; });

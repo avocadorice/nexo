@@ -8,7 +8,7 @@
       "language": "TypeScript",
       "deployment": "Browser; assets from API Deployment",
       "position": [
-        20,
+        10,
         20
       ],
       "sources": [
@@ -26,7 +26,8 @@
       ],
       "scaling": "No background polling. Bounded API lists, manual refresh.",
       "status": "implemented",
-      "external": false
+      "external": false,
+      "deployment_label": "Browser"
     },
     {
       "id": "api",
@@ -34,7 +35,7 @@
       "language": "Go",
       "deployment": "Deployment/api \u00b7 Service/api",
       "position": [
-        315,
+        190,
         20
       ],
       "sources": [
@@ -58,7 +59,8 @@
       ],
       "scaling": "Replicate stateless API pods. A 200-request in-flight cap returns HTTP 429 before queueing at the bounded database connection pool; request bodies are limited to 4 KiB.",
       "status": "implemented",
-      "external": false
+      "external": false,
+      "deployment_label": "Deployment/api"
     },
     {
       "id": "postgres",
@@ -66,8 +68,8 @@
       "language": "SQL",
       "deployment": "StatefulSet/postgres (local)",
       "position": [
-        610,
-        20
+        190,
+        200
       ],
       "sources": [
         {
@@ -89,7 +91,8 @@
       ],
       "scaling": "Four logical partitions; eligibility and due-work indexes. Physical sharding is not implemented. Managed cloud PostgreSQL is proposed, not provisioned.",
       "status": "implemented",
-      "external": false
+      "external": false,
+      "deployment_label": "StatefulSet/postgres"
     },
     {
       "id": "scheduler",
@@ -97,8 +100,8 @@
       "language": "Python / Kubernetes YAML",
       "deployment": "CronJob/schedule \u2192 bounded Job",
       "position": [
-        20,
-        255
+        10,
+        200
       ],
       "sources": [
         {
@@ -115,7 +118,8 @@
       ],
       "scaling": "00:00, 06:00, 12:00 and 18:00 UTC. Replays share durable slot and assignment records.",
       "status": "implemented",
-      "external": false
+      "external": false,
+      "deployment_label": "CronJob/schedule"
     },
     {
       "id": "builder",
@@ -123,8 +127,8 @@
       "language": "Python",
       "deployment": "Job from CronJob/schedule",
       "position": [
-        315,
-        255
+        10,
+        400
       ],
       "sources": [
         {
@@ -141,7 +145,8 @@
       ],
       "scaling": "Up to BATCH_MAX_ROWS rows per file and SCHEDULE_MAX_BATCHES per run. Advisory lock bounds active schedulers.",
       "status": "implemented",
-      "external": false
+      "external": false,
+      "deployment_label": "Job (schedule)"
     },
     {
       "id": "storage",
@@ -149,8 +154,8 @@
       "language": "S3 protocol",
       "deployment": "StatefulSet/object-storage; S3 API",
       "position": [
-        610,
-        255
+        190,
+        400
       ],
       "sources": [
         {
@@ -168,7 +173,8 @@
       ],
       "scaling": "Objects have stable batch-derived keys; files are bounded at 10,000 rows / 4 MiB. Local provider: SeaweedFS. Cloud object storage is proposed, not provisioned.",
       "status": "implemented",
-      "external": false
+      "external": false,
+      "deployment_label": "StatefulSet / S3"
     },
     {
       "id": "worker",
@@ -176,8 +182,8 @@
       "language": "Go",
       "deployment": "Deployment/worker",
       "position": [
-        315,
-        485
+        10,
+        600
       ],
       "sources": [
         {
@@ -194,7 +200,8 @@
       ],
       "scaling": "Bounded due-work query and one active transfer per process. Scale replicas with a per-batch advisory lock.",
       "status": "implemented",
-      "external": false
+      "external": false,
+      "deployment_label": "Deployment/worker"
     },
     {
       "id": "receiver",
@@ -202,8 +209,8 @@
       "language": "Python",
       "deployment": "Deployment/simulator; card-network",
       "position": [
-        610,
-        485
+        190,
+        600
       ],
       "sources": [
         {
@@ -221,7 +228,8 @@
       ],
       "scaling": "One receiver with persistent volume and SQLite receipts. This is a simulator, not card-network certification.",
       "status": "implemented",
-      "external": true
+      "external": true,
+      "deployment_label": "card-network namespace"
     }
   ],
   "arrows": [
@@ -230,96 +238,104 @@
       "from": "browser",
       "to": "api",
       "label": "HTTPS / JSON",
-      "path": "M 230 65 H 315",
+      "path": "M 150 65 H 190",
       "label_at": [
-        272,
-        48
+        170,
+        50
       ],
-      "mode": "synchronous"
+      "mode": "synchronous",
+      "short_label": "HTTPS"
     },
     {
       "id": "api-db",
       "from": "api",
       "to": "postgres",
       "label": "SQL transaction",
-      "path": "M 525 65 H 610",
+      "path": "M 260 110 V 200",
       "label_at": [
-        568,
-        47
+        282,
+        158
       ],
-      "mode": "synchronous"
+      "mode": "synchronous",
+      "short_label": "SQL"
     },
     {
       "id": "cron-job",
       "from": "scheduler",
       "to": "builder",
       "label": "cron \u2192 Job",
-      "path": "M 230 300 H 315",
+      "path": "M 80 290 V 400",
       "label_at": [
-        271,
-        282
+        110,
+        350
       ],
-      "mode": "asynchronous"
+      "mode": "asynchronous",
+      "short_label": "cron"
     },
     {
       "id": "builder-db",
       "from": "builder",
       "to": "postgres",
       "label": "claim + manifest",
-      "path": "M 420 255 V 177 H 715 V 110",
+      "path": "M 150 445 H 170 V 245 H 190",
       "label_at": [
-        565,
-        165
+        171,
+        330
       ],
-      "mode": "synchronous"
+      "mode": "synchronous",
+      "short_label": "claim"
     },
     {
       "id": "builder-s3",
       "from": "builder",
       "to": "storage",
       "label": "PutObject",
-      "path": "M 525 300 H 610",
+      "path": "M 150 445 H 190",
       "label_at": [
-        567,
-        282
+        170,
+        394
       ],
-      "mode": "synchronous"
+      "mode": "synchronous",
+      "short_label": "PutObject"
     },
     {
       "id": "worker-db",
       "from": "worker",
       "to": "postgres",
       "label": "poll + durable delivery state",
-      "path": "M 420 485 V 407 H 775 V 110",
+      "path": "M 80 600 V 562 H 345 V 245 H 330",
       "label_at": [
-        602,
-        397
+        270,
+        552
       ],
-      "mode": "synchronous"
+      "mode": "synchronous",
+      "short_label": "poll / state"
     },
     {
       "id": "worker-s3",
       "from": "worker",
       "to": "storage",
       "label": "GetObject",
-      "path": "M 525 520 H 570 V 370 H 715 V 345",
+      "path": "M 150 645 H 171 V 514 H 260 V 490",
       "label_at": [
-        646,
-        360
+        236,
+        508
       ],
-      "mode": "synchronous"
+      "mode": "synchronous",
+      "short_label": "GetObject"
     },
     {
       "id": "worker-sftp",
       "from": "worker",
       "to": "receiver",
       "label": "SFTP + receipt",
-      "path": "M 525 550 H 610",
+      "path": "M 150 645 H 190",
       "label_at": [
-        564,
-        572
+        171,
+        707
       ],
-      "mode": "synchronous"
+      "mode": "synchronous",
+      "short_label": "SFTP / ACK"
     }
   ],
   "flows": [
@@ -1023,5 +1039,11 @@
         }
       ]
     }
-  ]
+  ],
+  "diagram": {
+    "width": 360,
+    "height": 745,
+    "box_width": 140,
+    "box_height": 90
+  }
 }

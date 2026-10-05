@@ -17,7 +17,8 @@ code { font-family: ui-monospace, monospace; } .row { display: flex; flex-wrap: 
 .metric strong { display: block; font-size: 1.7rem; } abbr[title] { text-decoration: underline dotted #8295a4; text-underline-offset: 3px; cursor: help; }
 body.explorer { max-width: none; padding: 16px; } .explorer-grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(310px, 1.15fr) minmax(340px, 1.3fr); gap: 14px; align-items: start; }
 .explorer-grid section { min-width: 0; padding: 12px; max-height: calc(100vh - 175px); overflow: auto; }
-.diagram svg { width: 100%; min-width: 530px; height: auto; display: block; } #architecture svg { min-width: 430px; }
+.diagram svg { width: 100%; min-width: 0; height: auto; display: block; } #architecture svg { min-width: 0; }
+.zoom-125 .diagram svg { width: 125%; } .zoom-150 .diagram svg { width: 150%; } .zoom-200 .diagram svg { width: 200%; }
 .diagram { overflow: auto; } .hop { cursor: pointer; } .hop .hit { stroke: transparent; stroke-width: 20px; fill: none; }
 .hop.active .ink { stroke: #0968ba; stroke-width: 3px; } .hop.active text { fill: #075492; font-weight: 600; }
 .hop.active .background { fill: #eaf4fc; } .hop.pinned .ink { stroke: #7241b0; } .hop:focus { outline: none; } .hop:focus .ink { stroke: #d98400; stroke-width: 4px; }

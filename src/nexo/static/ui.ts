@@ -112,6 +112,17 @@ element<HTMLFormElement>("session").addEventListener("submit", event => {
   element<HTMLInputElement>("token").value = "";
   sessionVersion += 1;
   pendingSubmission = null;
+  if (customer) {
+    transactions = [];
+    element("chargebacks").replaceChildren();
+    element<HTMLSelectElement>("transaction").replaceChildren(new Option("Loading account…", ""));
+    element("submission").textContent = "";
+    element<HTMLButtonElement>("submit-chargeback").disabled = true;
+  } else {
+    element("summary").replaceChildren();
+    element("batches").replaceChildren();
+    element("batch-panel").hidden = true;
+  }
   void refresh();
 });
 element("clear-session").addEventListener("click", () => { token = ""; sessionVersion += 1; location.reload(); });

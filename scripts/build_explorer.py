@@ -174,7 +174,7 @@ def validate(mapping: dict) -> None:
 def svg_start(width: int, height: int, title: str) -> str:
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
-        f'role="img" aria-label="{escape(title)}"><title>{escape(title)}</title>'
+        f'role="group" aria-label="{escape(title)}"><title>{escape(title)}</title>'
         '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" '
         'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
         '<path d="M 0 0 L 10 5 L 0 10 z" fill="#455c6b"/></marker></defs>'
@@ -204,7 +204,10 @@ def label(
 
 
 def architecture(mapping: dict, glossary: dict) -> str:
-    parts = [svg_start(840, 710, "Nexo architecture")]
+    geometry = mapping["diagram"]
+    width, height = geometry["width"], geometry["height"]
+    box_width, box_height = geometry["box_width"], geometry["box_height"]
+    parts = [svg_start(width, height, "Nexo architecture")]
     boxes = {item["id"]: item for item in mapping["components"]}
     for arrow in mapping["arrows"]:
         path = arrow["path"]
@@ -217,24 +220,25 @@ def architecture(mapping: dict, glossary: dict) -> str:
             f'stroke-width="1.6" marker-end="url(#arrow)"{dash}/>'
         )
         x, y = arrow["label_at"]
-        parts.append(label(arrow["label"], x, y, glossary, 11))
+        parts.append(label(arrow.get("short_label", arrow["label"]), x, y, glossary, 11))
         parts.append("</g>")
     for box in boxes.values():
         x, y = box["position"]
         fill = "#fff5e8" if box.get("external") else "#f2f5f8"
         parts.append(
-            f'<g><rect x="{x}" y="{y}" width="210" height="90" rx="5" '
+            f'<g><rect x="{x}" y="{y}" width="{box_width}" height="{box_height}" rx="5" '
             f'fill="{fill}" stroke="#455c6b" stroke-width="1.5"/>'
         )
-        parts.append(label(box["name"], x + 105, y + 23, glossary, 13))
-        parts.append(label(box["language"], x + 105, y + 44, glossary, 11))
-        for index, line in enumerate(textwrap.wrap(box["deployment"], 32)[:2]):
-            parts.append(label(line, x + 105, y + 62 + index * 14, glossary, 10))
+        center = x + box_width / 2
+        for index, line in enumerate(textwrap.wrap(box["name"], 21)):
+            parts.append(label(line, center, y + 22 + index * 15, glossary, 12))
+        parts.append(label(box["language"], center, y + 57, glossary, 10))
+        parts.append(label(box["deployment_label"], center, y + 75, glossary, 9))
         if box["status"] == "not implemented":
-            parts.append(label("NOT IMPLEMENTED", x + 105, y - 7, glossary, 11, color="#a83232"))
+            parts.append(label("NOT IMPLEMENTED", center, y - 7, glossary, 11, color="#a83232"))
         parts.append("</g>")
     parts.append(
-        label("PostgreSQL is the durable work queue; there is no broker.", 420, 690, glossary, 12)
+        label("PostgreSQL is the durable work queue.", width / 2, height - 12, glossary, 11)
     )
     return "".join(parts) + "</svg>"
 
@@ -247,8 +251,8 @@ def sequence(flow: dict, mapping: dict, glossary: dict) -> str:
             for component in [message["from"], message["to"]]
         )
     )
-    positions = {component: 120 + index * 240 for index, component in enumerate(ids)}
-    width = max(600, len(ids) * 240)
+    positions = {component: 60 + index * 120 for index, component in enumerate(ids)}
+    width = max(360, len(ids) * 120)
     events = []
     pending: dict[str, list] = {}
 
@@ -265,26 +269,27 @@ def sequence(flow: dict, mapping: dict, glossary: dict) -> str:
             respond(index + 1, message)
     if pending:
         raise ValueError(f"Unresolved sequence response ordering in {flow['id']}")
-    height = 95 + sum(
-        115 if kind == "response" and msg.get("durable") else 80 for kind, _, msg in events
+    height = 100 + sum(
+        158 if kind == "response" and msg.get("durable") else 116 for kind, _, msg in events
     )
     parts = [svg_start(width, height, flow["name"])]
     for component in ids:
         box = next(item for item in mapping["components"] if item["id"] == component)
         x = positions[component]
         parts.append(
-            f'<rect x="{x - 100}" y="12" width="200" height="52" rx="4" '
-            f'fill="#f2f5f8" stroke="#778b98"/><path d="M {x} 64 V {height - 12}" '
+            f'<rect x="{x - 56}" y="12" width="112" height="65" rx="4" '
+            f'fill="#f2f5f8" stroke="#778b98"/><path d="M {x} 77 V {height - 12}" '
             'stroke="#bcc8d0" stroke-dasharray="4 5"/>'
         )
-        parts.append(label(box["name"], x, 35, glossary, 13))
-        parts.append(label(box["language"], x, 53, glossary, 10))
-    y = 88
+        for index, line in enumerate(textwrap.wrap(box["name"], 17)):
+            parts.append(label(line, x, 30 + index * 13, glossary, 11))
+        parts.append(label(box["language"], x, 67, glossary, 9))
+    y = 100
     for kind, index, message in events:
         is_response = kind == "response"
-        event_height = 115 if is_response and message.get("durable") else 80
+        event_height = 158 if is_response and message.get("durable") else 116
         left, right = positions[message["from"]], positions[message["to"]]
-        end = right if left != right else right + 105
+        end = right if left != right else right + 70
         if is_response:
             left, end = end, left
         dashed = is_response or message["mode"] == "asynchronous"
@@ -298,19 +303,20 @@ def sequence(flow: dict, mapping: dict, glossary: dict) -> str:
         heading = f"{index}. {message['label']} · {kind}"
         if not is_response:
             heading += f" · {message['mode']}"
-        parts.append(label(heading, width / 2, y, glossary, 12))
+        for offset, line in enumerate(textwrap.wrap(heading, width // 7)[:2]):
+            parts.append(label(line, width / 2, y + offset * 14, glossary, 12))
         detail = message["response_label" if is_response else "request_label"]
-        for offset, line in enumerate(textwrap.wrap(detail, max(30, width // 8))[:2]):
-            parts.append(label(line, width / 2, y + 18 + offset * 14, glossary, 11))
+        for offset, line in enumerate(textwrap.wrap(detail, width // 6)[:2]):
+            parts.append(label(line, width / 2, y + 40 + offset * 14, glossary, 11))
         parts.append(
-            f'<path class="ink" d="M {left} {y + 45} H {end}" fill="none" '
+            f'<path class="ink" d="M {left} {y + 76} H {end}" fill="none" '
             f'stroke="#455c6b" marker-end="url(#arrow)"{dash}/>'
         )
         if is_response and message.get("durable"):
-            lines = textwrap.wrap("◆ " + message["durable"], max(35, width // 8))[:2]
+            lines = textwrap.wrap("◆ " + message["durable"], width // 6)[:3]
             for offset, line in enumerate(lines):
                 parts.append(
-                    label(line, width / 2, y + 68 + offset * 14, glossary, 11, color="#246745")
+                    label(line, width / 2, y + 101 + offset * 14, glossary, 11, color="#246745")
                 )
         parts.append("</g>")
         y += event_height
