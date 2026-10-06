@@ -115,6 +115,8 @@ function comparisonPanel(parent: HTMLElement, comparison: Comparison): void {
   const diagram = data.community_diagrams.find(d => d.id === comparison.diagram); if (!diagram) return;
   const card = appendText(parent, "div", "", "community-card");
   appendText(card, "h3", diagram.title);
+  const original = appendText(card, "a", "Open original SVG in a new tab") as HTMLAnchorElement;
+  original.href = diagram.asset; original.target = "_blank"; original.rel = "noopener";
   appendText(card, "p", `${comparison.relationship} · ${comparison.explanation}`);
   const ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg"); svg.classList.add("community-picture");
