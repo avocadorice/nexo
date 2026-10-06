@@ -308,9 +308,7 @@ def main() -> None:
     for field in ("answer", "done", "question"):
         parser.add_argument(f"--{field}-file", type=Path)
     args = parser.parse_args()
-    statuses = dict(
-        zip(["waiting", "in-progress", "done", "blocked"], [" ", "~", "x", "?"], strict=True)
-    )
+    statuses = {"waiting": " ", "in-progress": "~", "done": "x", "blocked": "?"}
     fields = {
         name.title(): path.read_text().rstrip("\n") if path else None
         for name in ("answer", "done", "question")
