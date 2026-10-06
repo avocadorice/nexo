@@ -16,6 +16,8 @@ from xml.etree import ElementTree
 from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parents[1]
+REQUIREMENTS_START = "<!-- BEGIN GENERATED REQUIREMENTS -->"
+REQUIREMENTS_END = "<!-- END GENERATED REQUIREMENTS -->"
 
 
 def brace_end(text: str, start: int) -> int:
@@ -199,6 +201,84 @@ def validate_explanation_links(message: dict) -> None:
         raise ValueError(f"Explanation links must not overlap: {message['id']}")
 
 
+def validate_requirements(mapping: dict) -> None:
+    requirements = mapping.get("requirements")
+    if not isinstance(requirements, list) or not requirements:
+        raise ValueError("Requirements must be a nonempty list")
+    component_ids = {component["id"] for component in mapping["components"]}
+    seen: set[str] = set()
+    for requirement in requirements:
+        if not isinstance(requirement, dict):
+            raise ValueError("Each requirement must be an object")
+        kind = requirement.get("kind")
+        if not isinstance(kind, str) or kind not in {"functional", "non-functional"}:
+            raise ValueError("Requirement kind must be functional or non-functional")
+        identifier = requirement.get("id")
+        prefix = "FR" if kind == "functional" else "NFR"
+        if not isinstance(identifier, str) or not re.fullmatch(rf"{prefix}-[1-9]\d*", identifier):
+            raise ValueError("Requirement ID must match its kind")
+        if identifier in seen:
+            raise ValueError(f"Duplicate requirement ID: {identifier}")
+        seen.add(identifier)
+        for field in ("title", "explanation"):
+            value = requirement.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"Requirement needs nonempty {field}: {identifier}")
+        components = requirement.get("components")
+        if (
+            not isinstance(components, list)
+            or not components
+            or any(not isinstance(value, str) or value not in component_ids for value in components)
+            or len(components) != len(set(components))
+        ):
+            raise ValueError(f"Requirement needs unique known components: {identifier}")
+        limitation = requirement.get("limitation")
+        if "limitation" in requirement and (
+            not isinstance(limitation, str) or not limitation.strip()
+        ):
+            raise ValueError(f"Requirement limitation must be nonempty text: {identifier}")
+        if "status" in requirement:
+            if requirement["status"] != "partial" or not limitation:
+                raise ValueError(f"Partial requirement needs a limitation: {identifier}")
+
+
+def requirements_markdown(mapping: dict) -> str:
+    names = {component["id"]: component["name"] for component in mapping["components"]}
+    parts = [
+        "Generated from [explorer/mapping.json](../explorer/mapping.json). "
+        "Edit that mapping and run `.venv/bin/python scripts/build_explorer.py` "
+        "to update this section."
+    ]
+    for kind, heading in (
+        ("functional", "Functional behavior"),
+        ("non-functional", "Non-functional behavior"),
+    ):
+        parts.append(f"## {heading}")
+        for requirement in mapping["requirements"]:
+            if requirement["kind"] != kind:
+                continue
+            parts.append(f"### {requirement['id']} · {requirement['title']}")
+            if requirement.get("status"):
+                parts.append(f"Status: **{requirement['status']}**.")
+            parts.append(requirement["explanation"])
+            parts.append(
+                "Components: " + ", ".join(names[item] for item in requirement["components"]) + "."
+            )
+            if requirement.get("limitation"):
+                parts.append(f"Limit: {requirement['limitation']}")
+    return "\n\n".join(parts)
+
+
+def replace_requirements_section(document: str, mapping: dict) -> str:
+    if document.count(REQUIREMENTS_START) != 1 or document.count(REQUIREMENTS_END) != 1:
+        raise ValueError("Requirements document needs exactly one generated marker pair")
+    start = document.index(REQUIREMENTS_START) + len(REQUIREMENTS_START)
+    end = document.index(REQUIREMENTS_END)
+    if start > end:
+        raise ValueError("Requirements document markers are reversed")
+    return document[:start] + "\n\n" + requirements_markdown(mapping) + "\n\n" + document[end:]
+
+
 def validate(mapping: dict) -> None:
     component_ids = [item["id"] for item in mapping["components"]]
     arrow_ids = [item["id"] for item in mapping["arrows"]]
@@ -208,6 +288,7 @@ def validate(mapping: dict) -> None:
     for kind, ids in [("component", component_ids), ("arrow", arrow_ids), ("flow", flow_ids)]:
         if len(ids) != len(set(ids)):
             raise ValueError(f"Duplicate {kind} IDs")
+    validate_requirements(mapping)
     for arrow in mapping["arrows"]:
         if arrow["from"] not in component_ids or arrow["to"] not in component_ids:
             raise ValueError(f"Unknown component in arrow {arrow['id']}")
@@ -495,6 +576,9 @@ def main() -> None:
     data = build(
         output=args.output, source_root=args.source_root, compile_ts=not args.skip_typescript
     )
+    if args.output is None:
+        path = ROOT / "docs/requirements.md"
+        path.write_text(replace_requirements_section(path.read_text(), data))
     print(f"Built {len(data['components'])} components and {len(data['flows'])} mapped flows.")
 
 

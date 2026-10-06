@@ -14,6 +14,11 @@
 <label for="annotation-note">Your note</label><textarea id="annotation-note" rows="4" maxlength="4000" required placeholder="What is unclear, or what should change?"></textarea>
 <button id="annotation-save" type="submit">Save annotation</button><p id="annotation-status" role="status" aria-live="polite"></p>
 </div></div></form></section>
+<section id="requirements" class="requirements" aria-labelledby="requirements-title">
+<div class="requirements-heading"><h2 id="requirements-title">Requirements</h2><span id="requirements-help" class="muted">Teal outlines show matching boxes. Hover to preview; click to pin.</span><span id="requirement-state" role="status"></span><button id="clear-requirement" type="button" disabled>Clear requirement</button></div>
+<div class="requirement-groups"><div><h3>Functional</h3><ul id="functional-requirements"></ul></div><div><h3>Non-functional</h3><ul id="nonfunctional-requirements"></ul></div></div>
+<div id="requirement-detail" tabindex="0" aria-label="Requirement explanation and limits"></div>
+</section>
 <main class="explorer-grid"><section><h2>Architecture</h2><p class="legend">Solid arrows are synchronous calls. Dashed arrows are asynchronous work. Each box shows its language and deployment.</p><div class="diagram" id="architecture"></div><details><summary>Component deployment and scaling</summary><div id="components"></div></details><a href="architecture.svg" target="_blank" rel="noopener">Open full diagram</a></section><section><h2 id="flow-title">Sequence</h2><p class="legend">Each step shows its request and response. Green ◆ labels mark durable state changes.</p><div class="diagram" id="sequence"></div><p id="flow-note" class="simplification"></p><a id="sequence-file" target="_blank" rel="noopener">Open full sequence</a></section><section><h2 id="hop-title">Code and explanation</h2><div id="code-panel"></div></section></main>
 <details><summary>Glossary</summary><dl id="glossary"></dl></details>
 </body></html>

@@ -85,3 +85,29 @@ pre.source-code { padding: 8px 0; white-space: normal; }
 .annotation-drawing, .annotation-drawing * { cursor: crosshair !important; user-select: none !important; }
 .annotation-drawing #annotation-panel, .annotation-drawing #annotation-panel * { cursor: auto !important; }
 #annotation-arrows { max-height: 9rem; overflow: auto; padding-left: 1.2rem; font-size: .85rem; overflow-wrap: anywhere; }
+
+.requirements { padding: 10px 12px; }
+.requirements-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; }
+.requirements-heading h2, .requirement-groups h3 { margin: 0; }
+.requirements-heading > span, .requirements-heading > button { font-size: .8rem; }
+.requirements-heading > button { padding: 3px 6px; margin-left: auto; }
+.requirements-heading > button:disabled { cursor: default; }
+#requirement-state { color: #77decf; }
+.requirement-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 6px; }
+.requirement-groups h3 { font-size: .85rem; color: #aebfcd; }
+.requirement-groups ul { list-style: none; padding: 0; margin: 3px 0 6px; }
+.requirement-groups li { margin: 2px 0; }
+.requirement-button { width: 100%; padding: 2px 6px; text-align: left; font-size: .82rem; background: transparent; border-color: transparent; }
+.requirement-button strong { display: inline-block; min-width: 3.6em; color: #aebfcd; }
+.requirement-button.requirement-active { background: #193d3b; border-color: #77decf; }
+.requirement-button[aria-pressed=true] { border-left: 4px solid #77decf; padding-left: 3px; }
+.requirement-partial { display: inline-block; margin-left: 8px; color: #ffc56a; font-size: .75rem; }
+#requirement-detail { height: 5.5rem; overflow: auto; border-top: 1px solid #425869; padding-top: 5px; font-size: .8rem; }
+#requirement-detail p { margin: 0 0 5px; }
+.requirement-boxes { color: #77decf; }
+.component.requirement-match > rect { stroke: #77decf; stroke-width: 4px; }
+.annotation-mode .requirement-button { user-select: text; }
+.annotation-mode .requirement-button:hover { background: transparent; }
+.annotation-mode .requirement-button.requirement-active { background: #193d3b; }
+.explorer #notice:empty { display: none; }
+@media (max-width: 700px) { .requirement-groups { grid-template-columns: 1fr; gap: 4px; } #requirement-detail { height: 7rem; } }

@@ -15,7 +15,11 @@ spec.loader.exec_module(builder)
 
 
 def test_all_diagram_hops_resolve_real_source_and_render(tmp_path):
+    requirements_before = (ROOT / "docs/requirements.md").read_bytes()
     data = builder.build(ROOT, tmp_path, compile_ts=False)
+    assert (ROOT / "docs/requirements.md").read_bytes() == requirements_before
+    mapping = json.loads((ROOT / "explorer/mapping.json").read_text())
+    assert data["requirements"] == mapping["requirements"]
     references = [source for box in data["components"] for source in box["sources"]]
     references += [
         source for flow in data["flows"] for hop in flow["messages"] for source in hop["sources"]
@@ -298,4 +302,111 @@ def test_explanation_sources_require_implemented_focused_code(explanation_mappin
         builder.validate(mapping)
     message["sources"][0].pop("focus")
     with pytest.raises(ValueError, match="Explanation source must be implemented and focused"):
+        builder.validate(mapping)
+
+
+@pytest.fixture
+def requirement_mapping():
+    mapping = json.loads((ROOT / "explorer/mapping.json").read_text())
+    return mapping, mapping["requirements"][0]
+
+
+def test_requirements_document_matches_mapping_and_keeps_surrounding_prose(requirement_mapping):
+    mapping, requirement = requirement_mapping
+    document = (ROOT / "docs/requirements.md").read_text()
+    assert builder.replace_requirements_section(document, mapping) == document
+    prefix = document.split(builder.REQUIREMENTS_START)[0]
+    suffix = document.split(builder.REQUIREMENTS_END)[1]
+    requirement["title"] = "Changed in the one mapping."
+    mapping["components"][0]["name"] = "Renamed component"
+    updated = builder.replace_requirements_section(document, mapping)
+    assert updated.startswith(prefix + builder.REQUIREMENTS_START)
+    assert updated.endswith(builder.REQUIREMENTS_END + suffix)
+    assert "Changed in the one mapping." in updated
+    assert "Renamed component" in updated
+    for item in mapping["requirements"]:
+        assert item["explanation"] in updated
+        if item.get("limitation"):
+            assert item["limitation"] in updated
+    assert "Status: **partial**." in updated
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        "No generated markers.",
+        builder.REQUIREMENTS_START,
+        builder.REQUIREMENTS_START + builder.REQUIREMENTS_START + builder.REQUIREMENTS_END,
+        builder.REQUIREMENTS_START + builder.REQUIREMENTS_END + builder.REQUIREMENTS_END,
+        builder.REQUIREMENTS_END + builder.REQUIREMENTS_START,
+    ],
+)
+def test_requirements_document_rejects_missing_duplicate_or_reversed_markers(
+    requirement_mapping, document
+):
+    mapping, _ = requirement_mapping
+    with pytest.raises(ValueError, match="Requirements document"):
+        builder.replace_requirements_section(document, mapping)
+
+
+@pytest.mark.parametrize("requirements", [None, [], {}, ["not an object"]])
+def test_requirements_need_a_nonempty_list_of_records(requirement_mapping, requirements):
+    mapping, _ = requirement_mapping
+    mapping["requirements"] = requirements
+    with pytest.raises(ValueError, match="Requirements must|Each requirement"):
+        builder.validate(mapping)
+
+
+def test_requirements_reject_duplicate_ids(requirement_mapping):
+    mapping, requirement = requirement_mapping
+    mapping["requirements"].append(copy.deepcopy(requirement))
+    with pytest.raises(ValueError, match="Duplicate requirement ID"):
+        builder.validate(mapping)
+
+
+@pytest.mark.parametrize("kind", [None, "quality", [], 1])
+def test_requirement_kind_is_explicit(requirement_mapping, kind):
+    mapping, requirement = requirement_mapping
+    requirement["kind"] = kind
+    with pytest.raises(ValueError, match="Requirement kind"):
+        builder.validate(mapping)
+
+
+@pytest.mark.parametrize("identifier", [None, "NFR-1", "FR-0", "FR-01", 1])
+def test_requirement_id_matches_its_kind(requirement_mapping, identifier):
+    mapping, requirement = requirement_mapping
+    requirement["id"] = identifier
+    with pytest.raises(ValueError, match="Requirement ID"):
+        builder.validate(mapping)
+
+
+@pytest.mark.parametrize("field", ["title", "explanation", "limitation"])
+@pytest.mark.parametrize("value", [None, "", "   ", 1])
+def test_requirement_prose_must_be_nonempty_text(requirement_mapping, field, value):
+    mapping, requirement = requirement_mapping
+    requirement[field] = value
+    with pytest.raises(ValueError, match="Requirement needs nonempty|Requirement limitation"):
+        builder.validate(mapping)
+
+
+@pytest.mark.parametrize("components", [None, [], ["absent"], ["api", "api"], [1], [["api"]]])
+def test_requirements_cannot_highlight_unknown_or_repeated_components(
+    requirement_mapping, components
+):
+    mapping, requirement = requirement_mapping
+    requirement["components"] = components
+    with pytest.raises(ValueError, match="Requirement needs unique known components"):
+        builder.validate(mapping)
+
+
+def test_partial_requirement_requires_an_explanation_of_the_gap(requirement_mapping):
+    mapping, requirement = requirement_mapping
+    requirement["status"] = "partial"
+    builder.validate(mapping)
+    del requirement["limitation"]
+    with pytest.raises(ValueError, match="Partial requirement needs a limitation"):
+        builder.validate(mapping)
+    requirement["status"] = "deployed"
+    requirement["limitation"] = "Not deployed."
+    with pytest.raises(ValueError, match="Partial requirement needs a limitation"):
         builder.validate(mapping)

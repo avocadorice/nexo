@@ -1,5 +1,6 @@
 import { annotationsActive, initializeAnnotations } from "./annotations.js";
 import { bindDiagramViewport, diagramNavigationActive, type DiagramViewport } from "./diagram_viewport.js";
+import { initializeRequirements, type Requirement } from "./requirements.js";
 type Source = { file: string; symbol: string; label?: string; line?: number; focus_line?: number; focus_end_line?: number; code?: string; url?: string; location?: string; status: string; plumbing?: boolean };
 type Region = { x: number; y: number; width: number; height: number; label: string };
 type Comparison = { diagram: string; regions: Region[]; explanation: string; relationship: string };
@@ -8,7 +9,7 @@ type Component = { id: string; name: string; language: string; deployment: strin
 type ExplanationLink = { text: string; sources: number[] };
 type Message = { id: string; arrow: string; label: string; from: string; to: string; mode: string; request: string; response: string; durable?: string; protocol: string; explanation: string; explanation_links?: ExplanationLink[]; simplification?: string; sources: Source[] };
 type Flow = { id: string; name: string; note: string; messages: Message[] };
-type Data = { components: Component[]; flows: Flow[]; glossary: Record<string, string>; community_diagrams: CommunityDiagram[] };
+type Data = { components: Component[]; flows: Flow[]; glossary: Record<string, string>; community_diagrams: CommunityDiagram[]; requirements: Requirement[] };
 const get = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 let data: Data;
 let currentFlow: Flow;
@@ -329,6 +330,7 @@ async function main(): Promise<void> {
   currentFlow = first;
   await Promise.all([loadSvg("architecture.svg", get("architecture")), renderFlow(first)]);
   if (first.messages[0]) { pinned = first.messages[0].id; preview(pinned); }
+  initializeRequirements(data.requirements, data.components, glossary);
   get<HTMLSelectElement>("flow").addEventListener("change", async event => {
     const flow = data.flows.find(item => item.id === (event.target as HTMLSelectElement).value); if (!flow) return;
     selectionRequest += 1;

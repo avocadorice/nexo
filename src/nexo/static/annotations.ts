@@ -130,6 +130,14 @@ export function initializeAnnotations(context: () => Context, targetName: (targe
     if (arrowTool.drawing()) { event.preventDefault(); event.stopImmediatePropagation(); return; }
     const target = event.target.closest("[data-component], [data-message], [data-arrow]");
     if (target) { event.preventDefault(); event.stopImmediatePropagation(); chooseTarget(target); return; }
+    const requirement = event.target.closest("button[data-requirement]");
+    if (requirement) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (busy || selectedText) return;
+      const text = [...requirement.childNodes].map(node => node instanceof Element && node.matches(".requirement-partial") ? "" : node.textContent ?? "").join("").trim();
+      if (text && text.length <= 2000) { selectedText = text; textPanel = "page"; render(); }
+      return;
+    }
     // Keep the current view stable while text and diagram items are being selected.
     if (event.target.closest("a, button, select, input, textarea")) { event.preventDefault(); event.stopImmediatePropagation(); return; }
     if (busy || selectedText) return;

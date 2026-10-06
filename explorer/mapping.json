@@ -1900,5 +1900,126 @@
         10007.549206779035
       ]
     }
+  ],
+  "requirements": [
+    {
+      "id": "FR-1",
+      "kind": "functional",
+      "title": "File a chargeback and check its status.",
+      "components": [
+        "browser",
+        "api",
+        "postgres"
+      ],
+      "explanation": "A provisioned customer uses the real customer page to see imported transactions, dispute an owned transaction and read its status. Customer identity, network and currency come from server-side records. The same customer, idempotency key and request return the same chargeback; changed content returns 409, and different keys cannot dispute the same transaction twice.",
+      "limitation": "Transactions are synthetic imports. One chargeback per transaction is an initial scope limit. Acknowledgement confirms the receiver\u2019s answer, not settlement or a refund."
+    },
+    {
+      "id": "FR-2",
+      "kind": "functional",
+      "title": "Send CSVs to each network in four daily slots.",
+      "components": [
+        "scheduler",
+        "builder",
+        "postgres",
+        "storage",
+        "worker",
+        "receiver"
+      ],
+      "explanation": "At 00:00, 06:00, 12:00 and 18:00 UTC, a Kubernetes CronJob launches bounded batch work. Missed slots can be replayed. A slot claims committed, eligible, unassigned requests received before its cutoff; late commits wait for a later slot. Batch work writes comma-separated values (CSV) files split by network and stable logical partition, with a configurable row cap. It stores immutable objects through S3-compatible storage and delivers them over SFTP (SSH File Transfer Protocol). A matching durable acknowledgement sets acknowledged or rejected. Without it, a published batch stays submitted or unknown; a mismatched file identity, hash or row count becomes an observable conflict.",
+      "limitation": "Four daily submission windows can contain multiple bounded files. The user approved SFTP and the simulator contract on 2026-10-05; this is not a proprietary Visa/Mastercard file format or a live network integration."
+    },
+    {
+      "id": "FR-3",
+      "kind": "functional",
+      "title": "Never put a chargeback in two submitted files.",
+      "components": [
+        "postgres",
+        "builder",
+        "worker",
+        "receiver"
+      ],
+      "explanation": "PostgreSQL transactions, uniqueness constraints and immutable-membership triggers assign each chargeback permanently to at most one batch, including under concurrency. Each batch has one deterministic CSV and final filename. The worker uploads to a unique temporary name, verifies its bytes, commits publication intent, then renames without replacing an existing final file. A retry checks the acknowledgement and original final file first; reconciliation never creates a new batch. The simulator keeps durable, unique file and chargeback receipts.",
+      "limitation": "SFTP alone does not provide exactly-once delivery. Once publication may have occurred, a missing final file does not prove failure: without receiver evidence, Nexo keeps unknown and does not publish again."
+    },
+    {
+      "id": "FR-4",
+      "kind": "functional",
+      "title": "Inspect batches, files and delivery attempts.",
+      "components": [
+        "browser",
+        "api",
+        "postgres"
+      ],
+      "explanation": "The operations page calls the real service and requires an operations role. It shows lifecycle counts, queue age, batches, immutable file digests, delivery attempts and audit events, so accepted work can be followed through its recorded outcome.",
+      "limitation": "This is a small operations view with manual refresh and bounded recent lists, not a full observability stack."
+    },
+    {
+      "id": "NFR-1",
+      "kind": "non-functional",
+      "title": "Preserve exact amounts and identities.",
+      "components": [
+        "api",
+        "postgres",
+        "builder"
+      ],
+      "explanation": "Amounts are positive integer minor units expressed as decimal strings at the HTTP (Hypertext Transfer Protocol) boundary and stored as PostgreSQL bigint; they never pass through floating point. An amount cannot exceed the original transaction. Server-side ownership checks and database constraints preserve transaction and chargeback identities. Batch membership and the stored file manifest remain fixed, and generated rows preserve the recorded amounts and identifiers.",
+      "limitation": "Nexo submits disputes; it does not move money, convert currencies, settle refunds or implement a general payment ledger."
+    },
+    {
+      "id": "NFR-2",
+      "kind": "non-functional",
+      "title": "Keep accepted work durable and auditable.",
+      "components": [
+        "api",
+        "postgres",
+        "storage",
+        "worker",
+        "receiver"
+      ],
+      "explanation": "No accepted write is acknowledged before its database commit. Each accepted chargeback links to an append-only audit event, each delivery attempt has a durable record, and stored CSV artifacts and receiver receipts preserve evidence across process restarts. PostgreSQL currently holds the durable work queue. Database backups and restore exercises are part of deployment readiness.",
+      "limitation": "The local restore drill covers a small PostgreSQL snapshot, not object storage, receiver files or cloud recovery. Cross-store disaster recovery is manual. Kafka is not implemented; its hosting choice is still pending."
+    },
+    {
+      "id": "NFR-3",
+      "kind": "non-functional",
+      "title": "Keep work bounded as volume grows.",
+      "components": [
+        "api",
+        "postgres",
+        "builder",
+        "worker"
+      ],
+      "explanation": "Batch row caps, bounded database reads, worker concurrency, finite connection pools, request body limits and network timeouts bound work and memory. Logical partitions allow independent claimers. The initial targets are 100 accepted requests/second and 100,000 chargebacks drained within six hours. The recorded local run accepted 1,000 requests at 506.7/second in a short burst and drained 100,000 already accepted fixtures through matching acknowledgements in 48.93 seconds.",
+      "limitation": "The intake sample lasted about two seconds; the 100,000-row backlog was seeded separately. These measurements are not sustained throughput, Kubernetes workload sizing, cloud capacity or bank-scale validation. Physical database sharding is not implemented."
+    },
+    {
+      "id": "NFR-4",
+      "kind": "non-functional",
+      "title": "Restrict access and protect customer data.",
+      "components": [
+        "api",
+        "postgres",
+        "worker",
+        "receiver"
+      ],
+      "explanation": "Revocable opaque bearer tokens identify customers and operations roles; the database stores token hashes. Requests enforce ownership, strict field validation, parameterized queries and safe errors. Logs exclude tokens and customer payloads, and Nexo never receives a card number. Credentials and Secure Shell (SSH) host keys are generated outside version control; the worker verifies the receiver\u2019s host key. Production transport must be encrypted.",
+      "limitation": "Identity-provider integration is not implemented. Local loopback HTTP and unencrypted local database connections are documented exceptions. Local network policies are not enforced by default kind networking; cloud enforcement still needs verification. No bank security certification is claimed."
+    },
+    {
+      "id": "NFR-5",
+      "kind": "non-functional",
+      "title": "Run the same workloads locally and in cloud.",
+      "components": [
+        "api",
+        "scheduler",
+        "builder",
+        "worker",
+        "receiver"
+      ],
+      "explanation": "The service and delivery worker use Kubernetes Deployments; the scheduler launches bounded CronJob Jobs, and migrations use a Job. Shared base manifests support local kind and cloud overlays, with the simulator in a separate namespace. Local Kubernetes runs these workloads. The user approved DigitalOcean managed Kubernetes, managed PostgreSQL and Spaces on 2026-10-05.",
+      "limitation": "Cloud resources have not been provisioned. Provisioning still requires user sign-in and approval of the concrete resource plan, topology and cost. This is a single-region learning system, without multi-region failover.",
+      "status": "partial"
+    }
   ]
 }

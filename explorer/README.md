@@ -1,15 +1,17 @@
 # Nexo explorer
 
-`mapping.json` is the single source for architecture boxes and arrows, ordered sequence messages, request/response descriptions, code symbols, languages, deployment objects and simplifications. `docs/glossary.json` supplies every tooltip definition. Generated SVG and JSON files are build output and must not be edited.
+`mapping.json` is the single source for requirements, architecture boxes and arrows, ordered sequence messages, request/response descriptions, code symbols, languages, deployment objects and simplifications. `docs/glossary.json` supplies every tooltip definition. Generated SVG and JSON files are build output and must not be edited.
 
 The glossary retains Nexo-specific meanings and the previously requested idempotency explanations. Other terms are opt-in: add them only when the user requests them, through feedback queued with `/nexo-add-glossary`. Languages, common acronyms and general computing vocabulary are left as plain text.
 
 ```sh
 npm ci --prefix explorer
-python scripts/build_explorer.py
+.venv/bin/python scripts/build_explorer.py
 ```
 
 Serve the Go API, then open `/` or `/static/explorer.html`. Explorer is the main navigation link. The collapsed System views menu opens the customer and operations pages at `/static/index.html` and `/static/ops.html`. The explorer reads static build output and cannot call chargeback mutation endpoints.
+
+Functional and non-functional requirements appear at the top. Hover or focus one to highlight the architecture boxes that satisfy it; pin it to keep those highlights while exploring. This selection is independent of the sequence and code selection. Each requirement includes its implementation explanation and limits, including the unprovisioned cloud deployment. The `requirements` entries in the mapping also generate the marked section of `docs/requirements.md` during the normal explorer build. Edit the mapping, then rebuild; tests reject stale generated requirements prose.
 
 Hover or focus previews an arrow's code; click or Enter pins it. The architecture, selected sequence and source panel stay linked. The selected sequence step and the code that performs it are highlighted in yellow; related messages remain blue. The selector exposes one sequence per use case. Requests and responses are shown on each diagram and under “Request and response” in the source panel. Green diamonds identify durable transitions.
 
@@ -21,7 +23,7 @@ Missing or ambiguous symbols and focus anchors, reversed or clipped highlight ra
 
 Underlined explanation sentences or clauses reveal the code that implements those words when hovered or keyboard-focused. Click or Enter pins that explanation's code; Escape or Show all code restores the whole hop. Unlinked text remains plain when it does not correspond cleanly to the extracted lines. Optional `explanation_links` annotations in the same mapping pair exact explanation text with source indices. The builder rejects stale, overlapping or ambiguous text, invalid indices and links to unfocused or unimplemented code. Hover only changes which existing source cards are shown; it does not rebuild the explanation or steal keyboard focus.
 
-VS Code links use the build machine's checkout path by default. Container/cloud builds should pass the user's local path, for example `python scripts/build_explorer.py --source-root /Users/you/projects/nexo`, so those links open the matching local checkout. Rebuild after source changes; excerpts and line numbers are always extracted, never copied.
+VS Code links use the build machine's checkout path by default. Container/cloud builds should pass the user's local path, for example `.venv/bin/python scripts/build_explorer.py --source-root /Users/you/projects/nexo`, so those links open the matching local checkout. Rebuild after source changes; excerpts and line numbers are always extracted, never copied.
 
 Each excerpt also has **Copy location**, which copies the absolute `file:line` for VS Code's Quick Open (Cmd+P). The location stays visible for manual copying when a browser denies clipboard access. The original `vscode://` link remains available in browsers that support it.
 
