@@ -78,3 +78,10 @@ pre.source-code { padding: 8px 0; white-space: normal; }
 .annotation-target > rect, .annotation-target .ink { stroke: #ff9dc4 !important; stroke-width: 4px !important; }
 .annotation-target > rect, .annotation-target .background { fill: #503247 !important; }
 @media (max-width: 700px) { .annotation-columns { grid-template-columns: 1fr; } }
+
+.annotation-arrow-overlay { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 20; pointer-events: none; overflow: hidden; }
+.annotation-arrow-overlay path { stroke: #ff9dc4; stroke-width: 3px; fill: none; filter: drop-shadow(0 1px 1px #111923); }
+.annotation-arrow-overlay text { fill: #ffb6d3; stroke: #111923; stroke-width: 4px; paint-order: stroke; font: 700 16px system-ui, sans-serif; }
+.annotation-drawing, .annotation-drawing * { cursor: crosshair !important; user-select: none !important; }
+.annotation-drawing #annotation-panel, .annotation-drawing #annotation-panel * { cursor: auto !important; }
+#annotation-arrows { max-height: 9rem; overflow: auto; padding-left: 1.2rem; font-size: .85rem; overflow-wrap: anywhere; }

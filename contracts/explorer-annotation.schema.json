@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Local explorer annotation request",
-  "description": "POST http://127.0.0.1:8765/annotations; application/json and X-Nexo-Editor: 1 required. Only the localhost:8080 and 127.0.0.1:8080 origins are accepted. Body limit: 32768 bytes. Mapping IDs must exist in explorer/mapping.json. No client-selected file paths.",
+  "description": "POST http://127.0.0.1:8765/annotations; application/json and X-Nexo-Editor: 1 required. Only the localhost:8080 and 127.0.0.1:8080 origins are accepted. Body limit: 65536 bytes. Mapping IDs must exist in explorer/mapping.json. No client-selected file paths.",
   "type": "object",
   "additionalProperties": false,
   "required": ["request_id", "view", "selected_text", "targets", "note"],
@@ -15,15 +15,42 @@
         "panel": {"enum": ["architecture", "sequence", "code", "community", "glossary", "page"]}
       }
     },
-    "selected_text": {"type": "string", "maxLength": 2000, "description": "Selected page text. Text or at least one target is required. CRLF is normalized to LF."},
+    "selected_text": {"type": "string", "maxLength": 2000, "description": "Selected page text. Text, at least one target, or at least one arrow is required. CRLF is normalized to LF."},
     "targets": {"type": "array", "maxItems": 8, "uniqueItems": true, "items": {"$ref": "#/$defs/target"}},
-    "note": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S", "description": "User's words; CRLF is normalized to LF. Control characters other than tab/newline are rejected."}
+    "note": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S", "description": "User's words; CRLF is normalized to LF. Control characters other than tab/newline are rejected. Every arrow ID must be mentioned using [arrow n] at least once; repeated mentions are allowed, and unknown or noncanonical markers are rejected."},
+    "arrows": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/arrow"}, "description": "Optional drawn arrows. IDs must be unique and exactly match the set of [arrow n] references in the note. Empty or omitted arrays keep the pre-arrow retry hash unchanged."}
   },
   "anyOf": [
     {"properties": {"selected_text": {"pattern": "\\S"}}},
-    {"properties": {"targets": {"minItems": 1}}}
+    {"properties": {"targets": {"minItems": 1}}},
+    {"required": ["arrows"], "properties": {"arrows": {"minItems": 1}}}
   ],
   "$defs": {
+    "arrow": {
+      "type": "object", "additionalProperties": false, "required": ["id", "from", "to"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 1, "description": "Unique positive integer, referenced as [arrow n] in the note."},
+        "from": {"$ref": "#/$defs/endpoint"},
+        "to": {"$ref": "#/$defs/endpoint"}
+      }
+    },
+    "endpoint": {
+      "type": "object", "additionalProperties": false, "required": ["panel", "text", "x", "y"],
+      "properties": {
+        "panel": {"enum": ["architecture", "sequence", "code", "community", "glossary", "page"]},
+        "target": {"$ref": "#/$defs/arrowTarget"},
+        "text": {"type": "string", "maxLength": 500, "description": "Semantic text at this endpoint, empty for blank space. CRLF is normalized to LF; control characters other than tab/newline are rejected."},
+        "x": {"type": "number", "minimum": 0, "maximum": 1, "description": "Finite horizontal position, normalized to the panel width."},
+        "y": {"type": "number", "minimum": 0, "maximum": 1, "description": "Finite vertical position, normalized to the panel height."}
+      }
+    },
+    "arrowTarget": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id"],
+      "properties": {
+        "kind": {"enum": ["component", "message", "arrow"]},
+        "id": {"type": "string", "description": "Known mapping ID; its saved label comes from the mapping."}
+      }
+    },
     "target": {
       "type": "object", "additionalProperties": false, "required": ["kind", "id"],
       "properties": {

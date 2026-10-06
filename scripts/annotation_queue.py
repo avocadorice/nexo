@@ -6,6 +6,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PANELS = {"architecture", "sequence", "code", "community", "glossary", "page"}
 ENTRY = re.compile(r"^- \[[ x~?]\] (A-\d+) · .*$", re.MULTILINE)
 RECEIPT = re.compile(r"^  <!-- nexo-request ([0-9a-f-]{36}) sha256:([0-9a-f]{64}) -->$", re.M)
+ARROW_MARKER = re.compile(r"\[arrow ([^\]\n]*)\]")
 HEADER = "# Annotation queue\n\nRules are in [AGENTS.md](../AGENTS.md#annotation-queue).\n"
 
 
@@ -38,10 +40,83 @@ def text_field(value: object, limit: int, required: bool = False) -> str:
     return value
 
 
-def validate_note(payload: object, mapping: dict) -> tuple[dict, str, list[str]]:
+def mapped_target(target: object, lookup: dict, allow_label: bool = False) -> tuple[dict, str]:
+    keys = {"kind", "id"}
+    if not isinstance(target, dict) or not keys <= set(target) <= (
+        keys | {"label"} if allow_label else keys
+    ):
+        raise ValueError("Target needs a kind and ID.")
+    kind, identifier = target["kind"], target["id"]
+    if (
+        not isinstance(kind, str)
+        or kind not in lookup
+        or not isinstance(identifier, str)
+        or identifier not in lookup[kind]
+    ):
+        raise ValueError("Choose mapped targets.")
+    if "label" in target:
+        text_field(target["label"], 200)
+    label = f"{kind} {json.dumps(lookup[kind][identifier], ensure_ascii=False)} ({identifier})"
+    return {"kind": kind, "id": identifier}, label
+
+
+def arrow_endpoint(endpoint: object, lookup: dict) -> tuple[dict, str]:
+    keys = {"panel", "text", "x", "y"}
+    if not isinstance(endpoint, dict) or not keys <= set(endpoint) <= keys | {"target"}:
+        raise ValueError("Each arrow endpoint needs panel, text, x and y.")
+    panel = endpoint["panel"]
+    if not isinstance(panel, str) or panel not in PANELS:
+        raise ValueError("Choose a known explorer panel for each arrow endpoint.")
+    normalized = {"panel": panel, "text": text_field(endpoint["text"], 500)}
+    for axis in ("x", "y"):
+        value = endpoint[axis]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0 <= value <= 1
+            or not math.isfinite(value)
+        ):
+            raise ValueError("Arrow coordinates must be finite numbers from 0 to 1.")
+        normalized[axis] = float(value)
+    context = [panel]
+    if "target" in endpoint:
+        normalized["target"], label = mapped_target(endpoint["target"], lookup)
+        context.append(label)
+    if normalized["text"]:
+        context.append(json.dumps(normalized["text"], ensure_ascii=False))
+    context.append(f"(x={normalized['x']:g}, y={normalized['y']:g})")
+    return normalized, " · ".join(context)
+
+
+def validate_arrows(arrows: object, note: str, lookup: dict) -> tuple[list[dict], list[str]]:
+    if not isinstance(arrows, list) or len(arrows) > 8:
+        raise ValueError("Draw at most eight arrows.")
+    normalized, descriptions, seen = [], [], set()
+    for arrow in arrows:
+        if not isinstance(arrow, dict) or set(arrow) != {"id", "from", "to"}:
+            raise ValueError("Each arrow needs an ID and from/to endpoints.")
+        identifier = arrow["id"]
+        if type(identifier) is not int or identifier <= 0 or identifier in seen:
+            raise ValueError("Arrow IDs must be distinct positive integers.")
+        seen.add(identifier)
+        start, start_label = arrow_endpoint(arrow["from"], lookup)
+        end, end_label = arrow_endpoint(arrow["to"], lookup)
+        normalized.append({"id": identifier, "from": start, "to": end})
+        descriptions.append(f"  Arrow {identifier}: from {start_label} → to {end_label}\n")
+    markers = ARROW_MARKER.findall(note)
+    if any(not re.fullmatch(r"[1-9][0-9]*", marker) for marker in markers):
+        raise ValueError("Use arrow markers in the form [arrow 1].")
+    if {int(marker) for marker in markers} != seen:
+        raise ValueError("Each arrow needs a matching [arrow n] marker, with no unknown markers.")
+    return normalized, descriptions
+
+
+def validate_note(payload: object, mapping: dict) -> tuple[dict, str, list[str], list[str]]:
     keys = {"request_id", "view", "selected_text", "targets", "note"}
-    if not isinstance(payload, dict) or set(payload) != keys:
-        raise ValueError("Expected request_id, view, selected_text, targets and note.")
+    if not isinstance(payload, dict) or not keys <= set(payload) <= keys | {"arrows"}:
+        raise ValueError(
+            "Expected request_id, view, selected_text, targets, note and optional arrows."
+        )
     request_id = payload["request_id"]
     if not isinstance(request_id, str) or str(UUID(request_id)) != request_id:
         raise ValueError("request_id must be a canonical UUID.")
@@ -68,34 +143,25 @@ def validate_note(payload: object, mapping: dict) -> tuple[dict, str, list[str]]
         raise ValueError("Choose at most eight targets.")
     normalized, labels, seen = [], [], set()
     for target in targets:
-        if not isinstance(target, dict) or not {"kind", "id"} <= set(target) <= {
-            "kind",
-            "id",
-            "label",
-        }:
-            raise ValueError("Target needs a kind and ID.")
-        kind, identifier = target["kind"], target["id"]
-        if (
-            not isinstance(kind, str)
-            or kind not in lookup
-            or not isinstance(identifier, str)
-            or identifier not in lookup[kind]
-            or (kind, identifier) in seen
-        ):
+        clean, label = mapped_target(target, lookup, allow_label=True)
+        identity = (clean["kind"], clean["id"])
+        if identity in seen:
             raise ValueError("Choose distinct mapped targets.")
-        if "label" in target:
-            text_field(target["label"], 200)
-        seen.add((kind, identifier))
-        normalized.append({"kind": kind, "id": identifier})
-        labels.append(
-            f"{kind} {json.dumps(lookup[kind][identifier], ensure_ascii=False)} ({identifier})"
-        )
+        seen.add(identity)
+        normalized.append(clean)
+        labels.append(label)
     selected = text_field(payload["selected_text"], 2000)
     note = text_field(payload["note"], 4000, required=True)
-    if not selected.strip() and not targets:
-        raise ValueError("Select some text or a diagram target before saving.")
+    arrows, descriptions = validate_arrows(payload.get("arrows", []), note, lookup)
+    if not selected.strip() and not targets and not arrows:
+        raise ValueError("Select some text, a diagram target or draw an arrow before saving.")
     result = dict(payload, view=dict(view), selected_text=selected, targets=normalized, note=note)
-    return result, flows[view["flow_id"]], labels
+    if arrows:
+        result["arrows"] = arrows
+    else:
+        # Keep pre-arrow receipts valid when an old note is retried by the new client.
+        result.pop("arrows", None)
+    return result, flows[view["flow_id"]], labels, descriptions
 
 
 def regular_file(descriptor: int) -> os.stat_result:
@@ -167,7 +233,7 @@ class AnnotationQueue:
 
     def append(self, payload: object) -> dict:
         mapping = json.loads((self.root / "explorer/mapping.json").read_text())
-        note, flow_name, labels = validate_note(payload, mapping)
+        note, flow_name, labels, arrows = validate_note(payload, mapping)
         canonical = json.dumps(note, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         digest = hashlib.sha256(canonical.encode()).hexdigest()
         with self.locked() as (directory, before, current, descriptor):
@@ -188,11 +254,12 @@ class AnnotationQueue:
             timestamp = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M")
             selected = json.dumps(note["selected_text"], ensure_ascii=False)
             targets = " · ".join(([selected] if note["selected_text"] else []) + labels)
+            targets = targets or "Drawn arrows below"
             body = "\n".join("  > " + line for line in note["note"].split("\n"))
             entry = (
                 f"- [ ] {identifier} · {timestamp} · Explorer › {flow_name}"
                 f" › {note['view']['panel']}\n"
-                f"  Target: {targets}\n{body}\n"
+                f"  Target: {targets}\n{''.join(arrows)}{body}\n"
                 f"  <!-- nexo-request {note['request_id']} sha256:{digest} -->\n"
             )
             prefix = current or HEADER

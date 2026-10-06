@@ -49,6 +49,22 @@ def test_missing_source_fails_build_instead_of_showing_stale_code(tmp_path):
         builder.resolve_source(tmp_path, {"file": "missing.py", "symbol": "create"}, str(tmp_path))
 
 
+def test_sequence_participant_headers_identify_arrow_targets_without_becoming_controls(tmp_path):
+    data = builder.build(ROOT, tmp_path, compile_ts=False)
+    for flow in data["flows"]:
+        document = ElementTree.parse(tmp_path / "sequences" / f"{flow['id']}.svg")
+        headers = [node for node in document.iter() if "data-participant" in node.attrib]
+        expected = {message[side] for message in flow["messages"] for side in ("from", "to")}
+        assert {header.attrib["data-participant"] for header in headers} == expected
+        assert len(headers) == len(expected)
+        for header in headers:
+            assert "tabindex" not in header.attrib and "role" not in header.attrib
+            assert "hop" not in header.attrib.get("class", "").split()
+            tags = [child.tag.rsplit("}", 1)[-1] for child in header]
+            assert "rect" in tags and "text" in tags
+            assert "path" not in tags  # The lifeline is not part of the header's anchor bounds.
+
+
 def test_missing_symbol_is_rejected(tmp_path):
     path = tmp_path / "sample.py"
     path.write_text("def other():\n    return 1\n")

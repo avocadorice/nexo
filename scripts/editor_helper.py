@@ -134,7 +134,7 @@ class EditorHandler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers["Content-Length"])
-            if not 0 < length <= (32768 if self.path == "/annotations" else 4096):
+            if not 0 < length <= (65536 if self.path == "/annotations" else 4096):
                 raise ValueError("Request is too large or empty.")
             payload = json.loads(self.rfile.read(length))
             if self.path == "/annotations":

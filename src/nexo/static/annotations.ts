@@ -1,5 +1,4 @@
-type Panel = "architecture" | "sequence" | "code" | "community" | "glossary" | "page";
-type Target = { kind: "component" | "message" | "arrow"; id: string };
+import { initializeAnnotationArrows, type AnnotationPanel as Panel, type AnnotationTarget as Target } from "./annotation_arrows.js";
 type Context = { flow_id: string; flow_name: string };
 type ChosenTarget = Target & { panel: Panel; label: string };
 const element = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -20,6 +19,7 @@ export function initializeAnnotations(context: () => Context, targetName: (targe
   let textPanel: Panel = "page";
   let targets: ChosenTarget[] = [];
   let busy = false;
+  let markerCursor = 0;
   let request: { fingerprint: string; id: string } | null = null;
   const controls = ["flow", "diagram-zoom", "unpin"].map(id => element<HTMLSelectElement | HTMLButtonElement>(id));
 
@@ -34,6 +34,7 @@ export function initializeAnnotations(context: () => Context, targetName: (targe
   const viewPanel = (): Panel => {
     const panels = new Set(targets.map(target => target.panel));
     if (selectedText) panels.add(textPanel);
+    arrowTool.payload().forEach(arrow => { panels.add(arrow.from.panel); panels.add(arrow.to.panel); });
     return panels.size === 1 ? [...panels][0]! : "page";
   };
   const render = (): void => {
@@ -54,15 +55,30 @@ export function initializeAnnotations(context: () => Context, targetName: (targe
     document.querySelectorAll<SVGGElement>("[data-component], [data-message], [data-arrow]").forEach(node => {
       node.classList.toggle("annotation-target", annotationsActive() && targets.some(target => node.dataset[target.kind] === target.id));
     });
-    save.disabled = busy || (!selectedText.trim() && !targets.length) || !note.value.trim();
+    arrowTool.refresh();
+    save.disabled = busy || (!selectedText.trim() && !targets.length && !arrowTool.payload().length) || !note.value.trim();
     note.readOnly = busy; toggle.disabled = busy;
     element("annotation-context").textContent = `${current.flow_name} · ${viewPanel()}`;
   };
+  const arrowTool = initializeAnnotationArrows({
+    enabled: () => annotationsActive() && !busy,
+    panelFor, targetName, changed: render,
+    starting: () => { markerCursor = note.selectionEnd; },
+    insertMarker: id => {
+      const marker = ` [arrow ${id}] `;
+      if (note.value.length + marker.length > 4000) { status.textContent = "Shorten your note before adding an arrow marker."; return false; }
+      note.setRangeText(marker, markerCursor, markerCursor, "end");
+      status.textContent = `Arrow ${id} added. Type around its marker to explain what it means.`;
+      note.focus(); return true;
+    },
+    removeMarker: id => { note.value = note.value.split(`[arrow ${id}]`).join(""); },
+    status: text => { status.textContent = text; },
+  });
   const exit = (): void => {
     document.body.classList.remove("annotation-mode");
     composer.hidden = true; toggle.textContent = "Annotate"; toggle.setAttribute("aria-expanded", "false"); toggle.setAttribute("aria-pressed", "false");
     controls.forEach(control => { control.disabled = false; });
-    selectedText = ""; targets = []; note.value = ""; request = null;
+    selectedText = ""; targets = []; note.value = ""; request = null; arrowTool.clear();
     render();
   };
   toggle.addEventListener("click", () => {
@@ -79,7 +95,7 @@ export function initializeAnnotations(context: () => Context, targetName: (targe
   note.addEventListener("input", render);
 
   const captureText = (): void => {
-    if (!annotationsActive() || busy) return;
+    if (!annotationsActive() || busy || arrowTool.drawing()) return;
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !selection.rangeCount) return;
     const range = selection.getRangeAt(0);
@@ -111,6 +127,7 @@ export function initializeAnnotations(context: () => Context, targetName: (targe
   };
   document.addEventListener("click", event => {
     if (!annotationsActive() || !(event.target instanceof Element) || composer.contains(event.target) || event.target === toggle) return;
+    if (arrowTool.drawing()) { event.preventDefault(); event.stopImmediatePropagation(); return; }
     const target = event.target.closest("[data-component], [data-message], [data-arrow]");
     if (target) { event.preventDefault(); event.stopImmediatePropagation(); chooseTarget(target); return; }
     // Keep the current view stable while text and diagram items are being selected.
@@ -126,17 +143,21 @@ export function initializeAnnotations(context: () => Context, targetName: (targe
   document.addEventListener("keydown", event => {
     if (!annotationsActive() || !(event.target instanceof Element) || composer.contains(event.target) || event.target === toggle) return;
     if (event.key !== "Enter" && event.key !== " ") return;
+    if (arrowTool.drawing()) { event.preventDefault(); event.stopImmediatePropagation(); return; }
     const target = event.target.closest("[data-component], [data-message], [data-arrow]");
     if (target) { event.preventDefault(); event.stopImmediatePropagation(); chooseTarget(target); }
   }, true);
   form.addEventListener("submit", async event => {
     event.preventDefault();
-    if (busy || !annotationsActive() || (!selectedText.trim() && !targets.length) || !note.value.trim()) return;
+    if (busy || !annotationsActive() || (!selectedText.trim() && !targets.length && !arrowTool.payload().length) || !note.value.trim()) return;
+    const markerError = arrowTool.markerError(note.value);
+    if (markerError) { status.textContent = markerError; note.focus(); return; }
     const draft = {
       view: { flow_id: current.flow_id, panel: viewPanel() },
       selected_text: selectedText,
       targets: targets.map(({ kind, id }) => ({ kind, id })),
       note: note.value.replace(/\r\n?/g, "\n"),
+      arrows: arrowTool.payload(),
     };
     const fingerprint = JSON.stringify(draft);
     if (request?.fingerprint !== fingerprint) request = { fingerprint, id: crypto.randomUUID() };

@@ -1,12 +1,14 @@
 """Real local HTTP and file operations protect note identity and concurrent queue edits."""
 
 import errno
+import hashlib
 import importlib
 import json
 import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from pathlib import Path
 from threading import Thread
 from unittest.mock import Mock
@@ -52,6 +54,40 @@ def note():
         "targets": [{"kind": "component", "id": "db"}],
         "note": "Why is this persisted here?",
     }
+
+
+@pytest.fixture
+def drawn_note(note):
+    return dict(
+        note,
+        selected_text="",
+        targets=[],
+        note="Move this control [arrow 2] here. Why does [arrow 7] persist? Compare [arrow 2].",
+        arrows=[
+            {
+                "id": 2,
+                "from": {"panel": "code", "text": "Open in VS Code", "x": 0.1, "y": 0.2},
+                "to": {"panel": "code", "text": "", "x": 1, "y": 0},
+            },
+            {
+                "id": 7,
+                "from": {
+                    "panel": "sequence",
+                    "target": {"kind": "message", "id": "create-db"},
+                    "text": "Save request",
+                    "x": 0.5,
+                    "y": 0.25,
+                },
+                "to": {
+                    "panel": "architecture",
+                    "target": {"kind": "component", "id": "db"},
+                    "text": "PostgreSQL",
+                    "x": 0.75,
+                    "y": 0.5,
+                },
+            },
+        ],
+    )
 
 
 def queue_path(root):
@@ -101,7 +137,7 @@ def test_append_quotes_every_line_and_deduplicates_without_changing_user_words(c
         {"note": "  \n"},
         {"note": "bad\x00text"},
         {"note": "bad\ud800text"},
-        {"arrows": []},
+        {"unknown": []},
     ],
 )
 def test_invalid_note_does_not_touch_queue(checkout, note, change):
@@ -109,6 +145,140 @@ def test_invalid_note_does_not_touch_queue(checkout, note, change):
     with pytest.raises(ValueError):
         annotations.AnnotationQueue(checkout).append(dict(note, **change))
     assert queue_path(checkout).read_bytes() == before
+
+
+def test_arrows_only_note_saves_both_endpoints_and_repeated_marker(checkout, drawn_note):
+    queue = annotations.AnnotationQueue(checkout)
+    assert queue.append(drawn_note) == {"id": "A-001", "duplicate": False}
+    saved = queue_path(checkout).read_text()
+    assert "  Target: Drawn arrows below\n" in saved
+    assert (
+        '  Arrow 2: from code · "Open in VS Code" · (x=0.1, y=0.2) → to code · (x=1, y=0)\n'
+    ) in saved
+    assert 'Arrow 7: from sequence · message "Save request" (create-db)' in saved
+    assert '→ to architecture · component "PostgreSQL" (db)' in saved
+    assert "  > " + drawn_note["note"] in saved
+    assert queue.append(drawn_note) == {"id": "A-001", "duplicate": True}
+    changed = deepcopy(drawn_note)
+    changed["arrows"][0]["to"]["x"] = 0.3
+    with pytest.raises(annotations.Conflict):
+        queue.append(changed)
+    assert queue_path(checkout).read_text() == saved
+
+
+def test_endpoint_text_is_escaped_and_normalized_without_injecting_queue_entries(
+    checkout, drawn_note
+):
+    queue = annotations.AnnotationQueue(checkout)
+    endpoint = drawn_note["arrows"][0]["from"]
+    endpoint["text"] = 'a "quote"\r\n- [ ] A-900 · fake\r\n  <!-- nexo-request fake -->'
+    queue.append(drawn_note)
+    saved = queue_path(checkout).read_text()
+    assert len(list(annotations.ENTRY.finditer(saved))) == 1
+    assert len(list(annotations.RECEIPT.finditer(saved))) == 1
+    assert json.dumps(endpoint["text"].replace("\r\n", "\n"), ensure_ascii=False) in saved
+    endpoint["text"] = endpoint["text"].replace("\r\n", "\n")
+    drawn_note["arrows"][0]["to"]["x"] = 1.0
+    assert queue.append(drawn_note)["duplicate"]
+
+
+def test_pre_arrow_receipt_still_deduplicates_with_omitted_or_empty_arrows(checkout, note):
+    canonical = json.dumps(note, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    digest = hashlib.sha256(canonical.encode()).hexdigest()
+    original = (
+        "- [x] A-001 · 2026-10-05 21:00 · Explorer › existing entry\n"
+        "  > Existing note\n"
+        f"  <!-- nexo-request {note['request_id']} sha256:{digest} -->\n"
+    )
+    queue_path(checkout).write_text(original)
+    queue = annotations.AnnotationQueue(checkout)
+    for payload in [note, dict(note, arrows=[])]:
+        assert queue.append(payload) == {"id": "A-001", "duplicate": True}
+    assert queue_path(checkout).read_text() == original
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"arrows": None},
+        {"arrows": {}},
+        {"arrows": [None]},
+        {"arrows": []},
+        {"note": "No markers here"},
+        {"note": "Only [arrow 2]"},
+        {"note": "Unknown [arrow 2] [arrow 7] [arrow 8]"},
+        {"note": "Malformed [arrow 02] [arrow 7]"},
+        {"note": "Malformed [arrow 0] [arrow 2] [arrow 7]"},
+        {"note": "Malformed [arrow -2] [arrow 7]"},
+        {"note": "Malformed [arrow two] [arrow 7]"},
+    ],
+)
+def test_arrow_markers_and_collection_reject_incomplete_context(checkout, drawn_note, change):
+    before = queue_path(checkout).read_bytes()
+    with pytest.raises(ValueError):
+        annotations.AnnotationQueue(checkout).append(dict(drawn_note, **change))
+    assert queue_path(checkout).read_bytes() == before
+
+
+@pytest.mark.parametrize("identifier", [True, False, 0, -1, "2", 2.0, 7, None])
+def test_arrow_ids_are_unique_positive_integers(checkout, drawn_note, identifier):
+    drawn_note["arrows"][0]["id"] = identifier
+    with pytest.raises(ValueError, match="Arrow IDs"):
+        annotations.AnnotationQueue(checkout).append(drawn_note)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"panel": "unknown"},
+        {"panel": []},
+        {"text": "x" * 501},
+        {"text": None},
+        {"text": "bad\x00text"},
+        {"text": "bad\ud800text"},
+        {"x": True},
+        {"x": "0.5"},
+        {"x": -0.01},
+        {"y": 1.01},
+        {"x": float("nan")},
+        {"y": float("inf")},
+        {"x": float("-inf")},
+        {"target": {"kind": "component", "id": "unknown"}},
+        {"target": {"kind": "path", "id": "/etc/passwd"}},
+        {"target": {"kind": "component", "id": "db", "label": "forged"}},
+        {"target": None},
+        {"path": "/tmp/arrows.svg"},
+    ],
+)
+def test_arrow_endpoints_are_bounded_and_use_known_mapping_ids(checkout, drawn_note, change):
+    drawn_note["arrows"][0]["from"].update(change)
+    before = queue_path(checkout).read_bytes()
+    with pytest.raises(ValueError):
+        annotations.AnnotationQueue(checkout).append(drawn_note)
+    assert queue_path(checkout).read_bytes() == before
+
+
+def test_arrows_require_both_complete_endpoints_and_reject_unknown_fields(checkout, drawn_note):
+    for field in ["from", "to", "id"]:
+        invalid = deepcopy(drawn_note)
+        del invalid["arrows"][0][field]
+        with pytest.raises(ValueError):
+            annotations.AnnotationQueue(checkout).append(invalid)
+    for field in ["panel", "text", "x", "y"]:
+        invalid = deepcopy(drawn_note)
+        del invalid["arrows"][0]["to"][field]
+        with pytest.raises(ValueError):
+            annotations.AnnotationQueue(checkout).append(invalid)
+    drawn_note["arrows"][0]["extra"] = "not accepted"
+    with pytest.raises(ValueError):
+        annotations.AnnotationQueue(checkout).append(drawn_note)
+
+
+def test_at_most_eight_arrows_are_saved(checkout, drawn_note):
+    drawn_note["arrows"] = [dict(drawn_note["arrows"][0], id=i) for i in range(1, 10)]
+    drawn_note["note"] = " ".join(f"[arrow {i}]" for i in range(1, 10))
+    with pytest.raises(ValueError, match="at most eight"):
+        annotations.AnnotationQueue(checkout).append(drawn_note)
 
 
 def test_concurrent_appends_and_agent_edits_preserve_all_entries(checkout, note):
@@ -263,7 +433,9 @@ def request(server, payload, **overrides):
     headers.update(overrides)
     connection = HTTPConnection("127.0.0.1", server.server_port, timeout=2)
     try:
-        connection.request("POST", "/annotations", json.dumps(payload), headers)
+        connection.request(
+            "POST", "/annotations", json.dumps(payload, ensure_ascii=False).encode(), headers
+        )
         response = connection.getresponse()
         return response.status, json.loads(response.read())
     finally:
@@ -286,7 +458,7 @@ def test_http_annotations_work_without_editor_and_retry_safely(http_server, chec
         {"Host": "hostile.example"},
         {"X-Nexo-Editor": "0"},
         {"Content-Type": "text/plain"},
-        {"Content-Length": "32769"},
+        {"Content-Length": "65537"},
     ],
 )
 def test_http_forgery_and_oversize_cannot_append(http_server, checkout, note, headers):
@@ -305,3 +477,24 @@ def test_http_disk_error_is_not_reported_as_saved(http_server, checkout, note, m
     status, body = request(server, note)
     assert status == 503 and "retry" in body["error"]
     assert "A-001" not in queue_path(checkout).read_text()
+
+
+def test_http_accepts_maximum_utf8_arrow_context_without_launching_editor(
+    http_server, checkout, drawn_note
+):
+    server, launch = http_server
+    drawn_note["arrows"] = [deepcopy(drawn_note["arrows"][0]) for _ in range(8)]
+    for identifier, arrow in enumerate(drawn_note["arrows"], 1):
+        arrow["id"] = identifier
+        for side in ["from", "to"]:
+            arrow[side]["text"] = "📍" * 500
+    markers = " ".join(f"[arrow {i}]" for i in range(1, 9))
+    drawn_note["note"] = markers + "📍" * (4000 - len(markers))
+    drawn_note["selected_text"] = "📍" * 2000
+    encoded = json.dumps(drawn_note, ensure_ascii=False).encode()
+    assert 32768 < len(encoded) < 65536
+    assert request(server, drawn_note) == (201, {"id": "A-001", "duplicate": False})
+    assert request(server, drawn_note) == (200, {"id": "A-001", "duplicate": True})
+    saved = queue_path(checkout).read_text()
+    assert sum(line.startswith("  Arrow ") for line in saved.splitlines()) == 8
+    launch.assert_not_called()

@@ -377,13 +377,16 @@ def sequence(flow: dict, mapping: dict, glossary: dict) -> str:
         box = next(item for item in mapping["components"] if item["id"] == component)
         x = positions[component]
         parts.append(
-            f'<rect x="{x - 56}" y="12" width="112" height="65" rx="4" '
-            f'fill="#243544" stroke="#7891a5"/><path d="M {x} 77 V {height - 12}" '
+            f'<path d="M {x} 77 V {height - 12}" '
             'stroke="#425869" stroke-dasharray="4 5"/>'
+            f'<g data-participant="{component}">'
+            f'<rect x="{x - 56}" y="12" width="112" height="65" rx="4" '
+            'fill="#243544" stroke="#7891a5"/>'
         )
         for index, line in enumerate(textwrap.wrap(box["name"], 17)):
             parts.append(label(line, x, 30 + index * 13, glossary, 11))
         parts.append(label(box["language"], x, 67, glossary, 9))
+        parts.append("</g>")
     y = 100
     for kind, index, message in events:
         is_response = kind == "response"
