@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nexo · Chargebacks</title><link rel="stylesheet" href="style.css"><script type="module" src="build/ui.js"></script></head>
-<body data-page="customer"><header><h1>Nexo chargebacks</h1><nav><a href="index.html" aria-current="page">Customer</a><a href="ops.html">Operations</a><a href="explorer.html">Explorer</a></nav></header>
+<body data-page="customer"><header><h1>Nexo chargebacks</h1><nav aria-label="Main"><a class="primary-nav" href="explorer.html">Explorer</a><details class="system-nav"><summary>System views</summary><div><a href="index.html" aria-current="page">Customer</a><a href="ops.html">Operations</a></div></details></nav></header>
 <p class="muted">A working chargeback system connected to a labeled card-network simulator. Use synthetic transactions only.</p>
 <section><h2>Session</h2><form id="session"><label>Customer bearer token <input id="token" type="password" autocomplete="off" spellcheck="false" required></label><button type="submit">Load my account</button> <button type="button" id="clear-session">Clear session</button></form><p class="muted">The token stays in this page's memory and is cleared when the page closes. It is not saved in browser storage.</p></section>
 <p id="notice" role="status" aria-live="polite"></p>

@@ -55,7 +55,7 @@ func New(pool *pgxpool.Pool, partitions int, staticDir string) http.Handler {
 	if staticDir != "" {
 		mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
 		mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/static/index.html", http.StatusTemporaryRedirect)
+			http.Redirect(w, r, "/static/explorer.html", http.StatusTemporaryRedirect)
 		})
 	}
 	return ObserveAndLimit(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

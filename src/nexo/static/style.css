@@ -4,6 +4,10 @@ body { margin: 0 auto; max-width: 1200px; padding: 24px; }
 header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 24px; border-bottom: 1px solid #ccd3d9; margin-bottom: 20px; }
 h1 { font-size: 1.55rem; margin: 0 0 12px; } h2 { font-size: 1.12rem; } h3 { font-size: 1rem; }
 nav { display: flex; gap: 20px; } a { color: #13579b; }
+.primary-nav { font-weight: 650; }
+nav details.system-nav { position: relative; margin: 0; color: #52616c; font-size: .9rem; }
+.system-nav > div { position: absolute; z-index: 2; top: 100%; right: 0; min-width: 150px; padding: 12px; background: white; border: 1px solid #ccd3d9; border-radius: 4px; }
+.system-nav a { display: block; padding: 4px; }
 section, .panel { padding: 18px; border: 1px solid #ccd3d9; border-radius: 6px; background: white; margin-bottom: 16px; }
 label { display: block; margin: 10px 0; } input, select, button { font: inherit; padding: 8px; border: 1px solid #8e9da8; border-radius: 4px; }
 input, select { max-width: 100%; } input[type=password] { width: min(600px, 100%); }

@@ -13,7 +13,7 @@ Install Docker (or start Colima), kind, kubectl, Python 3 and ssh-keygen, then:
 KUBECONFIG="$PWD/.local/kubeconfig" kubectl --context kind-nexo -n nexo port-forward service/api 8080:80
 ```
 
-Open http://localhost:8080. The local script generates synthetic customers and private credentials in `.local/seed.json`. Enter a customer's token on the customer page, or `ops_token` on the operations page. Tokens stay in browser memory and expire after seven days. No card numbers are accepted.
+Open http://localhost:8080 for the Explorer. The local script generates synthetic customers and private credentials in `.local/seed.json`. Open **System views → Customer** to enter a customer's token, or **System views → Operations** for `ops_token`. Tokens stay in browser memory and expire after seven days. No card numbers are accepted.
 
 Follow [local operations](docs/local-operations.md) for configuration and teardown. The API accepts new requests immediately; file windows occur at 00:00, 06:00, 12:00 and 18:00 UTC. A request filed after a cutoff waits for the next slot. The scheduler can be manually replayed as a Kubernetes Job; the same slot and immutable membership protect against duplicates.
 

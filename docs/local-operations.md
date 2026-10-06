@@ -14,7 +14,7 @@ KUBECONFIG="$PWD/.local/kubeconfig" kubectl -n nexo port-forward service/api 808
 
 Open `http://localhost:8080`. The startup script builds the Go API and delivery worker, installs the locked Python dependencies, builds the TypeScript interface/explorer, and loads their shared image into kind. It then creates runtime secrets, waits for PostgreSQL and object storage, migrates the schema, starts services, and seeds synthetic customers/transactions. First startup may take several minutes while images download.
 
-Tokens are written only to `.local/seed.json` with private file permissions. Use the customer or operations token in the UI. All seed records are synthetic. Local runtime passwords, SFTP host key, and kubeconfig are under ignored `.local/`; none belongs in a commit. The worker trusts the exact generated simulator host key instead of accepting arbitrary hosts.
+Tokens are written only to `.local/seed.json` with private file permissions. The home page opens Explorer; choose **System views → Customer** or **System views → Operations** to enter the matching token. All seed records are synthetic. Local runtime passwords, SFTP host key, and kubeconfig are under ignored `.local/`; none belongs in a commit. The worker trusts the exact generated simulator host key instead of accepting arbitrary hosts.
 
 The scripts use the isolated `.local/kubeconfig` by default. For the remaining commands, set:
 

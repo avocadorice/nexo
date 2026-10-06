@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nexo · Operations</title><link rel="stylesheet" href="style.css"><script type="module" src="build/ui.js"></script></head>
-<body data-page="ops"><header><h1>Nexo operations</h1><nav><a href="index.html">Customer</a><a href="ops.html" aria-current="page">Operations</a><a href="explorer.html">Explorer</a></nav></header>
+<body data-page="ops"><header><h1>Nexo operations</h1><nav aria-label="Main"><a class="primary-nav" href="explorer.html">Explorer</a><details class="system-nav"><summary>System views</summary><div><a href="index.html">Customer</a><a href="ops.html" aria-current="page">Operations</a></div></details></nav></header>
 <p class="muted">Live database state. Unknown delivery outcomes need reconciliation; they are never counted as success.</p>
 <section><form id="session"><label>Operations bearer token <input id="token" type="password" autocomplete="off" spellcheck="false" required></label><button type="submit">Load operations</button> <button id="clear-session" type="button">Clear session</button> <button id="refresh" type="button" disabled>Refresh</button></form></section>
 <p id="notice" role="status" aria-live="polite"></p>

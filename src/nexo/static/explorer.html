@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nexo · System explorer</title><link rel="stylesheet" href="style.css"><script type="module" src="build/explorer.js"></script></head>
-<body class="explorer"><header><h1>Nexo system explorer</h1><nav><a href="index.html">Customer</a><a href="ops.html">Operations</a><a href="explorer.html" aria-current="page">Explorer</a></nav></header>
+<body class="explorer"><header><h1>Nexo system explorer</h1><nav aria-label="Main"><a class="primary-nav" href="explorer.html" aria-current="page">Explorer</a><details class="system-nav"><summary>System views</summary><div><a href="index.html">Customer</a><a href="ops.html">Operations</a></div></details></nav></header>
 <div class="row"><label>Flow <select id="flow"></select></label><label>Diagram zoom <select id="diagram-zoom"><option value="100">Fit</option><option value="125">125%</option><option value="150">150%</option><option value="200">200%</option></select></label><button id="unpin">Unpin selection</button><span id="selection-state" role="status" aria-live="polite"></span></div>
 <p class="muted">Hover or focus an arrow to preview its code, or a box to compare the community diagrams. Click or press Enter to pin it. Dotted underlines explain glossary terms. This explorer only reads generated files.</p>
 <p id="notice" role="status"></p>
