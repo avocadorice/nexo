@@ -1,3 +1,4 @@
+import { bindDiagramViewport, diagramNavigationActive, type DiagramViewport } from "./diagram_viewport.js";
 type Source = { file: string; symbol: string; label?: string; line?: number; focus_line?: number; focus_end_line?: number; code?: string; url?: string; location?: string; status: string; plumbing?: boolean };
 type Region = { x: number; y: number; width: number; height: number; label: string };
 type Comparison = { diagram: string; regions: Region[]; explanation: string; relationship: string };
@@ -15,6 +16,7 @@ let selected: string | null = null;
 let flowRequest = 0;
 let selectionRequest = 0;
 const messages = new Map<string, Message>();
+const diagramViewports = new WeakMap<SVGSVGElement, DiagramViewport>();
 function appendText(parent: HTMLElement, tag: string, content: string, className = ""): HTMLElement {
   const node = document.createElement(tag); node.textContent = content; node.className = className; parent.append(node); return node;
 }
@@ -128,16 +130,17 @@ function comparisonPanel(parent: HTMLElement, comparison: Comparison): void {
     const title = document.createElementNS(ns, "title"); title.textContent = region.label; rect.append(title); svg.append(rect);
   }
   card.append(svg);
+  const viewport = bindDiagramViewport(svg);
   const controls = appendText(card, "div", "", "community-controls");
   const overview = appendText(controls, "button", "Whole diagram") as HTMLButtonElement;
   overview.type = "button";
-  overview.addEventListener("click", () => svg.setAttribute("viewBox", diagram.view_box.join(" ")));
+  overview.addEventListener("click", () => viewport.reset());
   for (const region of comparison.regions) {
     const zoom = appendText(controls, "button", `Zoom: ${region.label}`) as HTMLButtonElement;
     zoom.type = "button";
     zoom.addEventListener("click", () => {
       const padding = Math.max(region.width, region.height) * .25;
-      svg.setAttribute("viewBox", [region.x - padding, region.y - padding, region.width + 2 * padding, region.height + 2 * padding].join(" "));
+      viewport.setViewBox([region.x - padding, region.y - padding, region.width + 2 * padding, region.height + 2 * padding]);
     });
   }
 }
@@ -238,12 +241,13 @@ function bindHops(root: HTMLElement): void {
   root.querySelectorAll<SVGGElement>(".hop, .component").forEach(node => {
     const resolve = (): string | undefined => node.dataset.component ? `component:${node.dataset.component}` : node.dataset.message ?? (currentFlow.messages.find(m => m.arrow === node.dataset.arrow) ?? data.flows.flatMap(flow => flow.messages).find(m => m.arrow === node.dataset.arrow))?.id;
     const choose = async (pin: boolean): Promise<void> => {
+      if (diagramNavigationActive(node)) return;
       const request = ++selectionRequest;
       const id = resolve(); if (!id) return;
       if (pin) pinned = id;
       const flow = flowFor(id);
       if (flow && currentFlow.id !== flow.id) await renderFlow(flow);
-      if (request === selectionRequest) preview(id);
+      if (request === selectionRequest && !diagramNavigationActive(node)) preview(id);
     };
     // Scrolling code into keyboard focus can move a diagram beneath a stationary pointer.
     node.addEventListener("pointermove", () => { if (resolve() !== selected) void choose(false); });
@@ -251,6 +255,7 @@ function bindHops(root: HTMLElement): void {
     node.addEventListener("click", () => void choose(true));
     node.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void choose(true); } });
     const restore = async (): Promise<void> => {
+      if (diagramNavigationActive(node)) return;
       const request = ++selectionRequest;
       const id = pinned;
       if (!id) return;
@@ -258,7 +263,7 @@ function bindHops(root: HTMLElement): void {
       // Keep pinned controls in place when focus moves from the diagram into the panel.
       if (id === selected && flow?.id === currentFlow.id) return;
       if (flow && flow.id !== currentFlow.id) await renderFlow(flow);
-      if (request === selectionRequest) preview(id);
+      if (request === selectionRequest && !diagramNavigationActive(node)) preview(id);
     };
     node.addEventListener("pointerleave", () => void restore());
     node.addEventListener("blur", () => void restore());
@@ -268,7 +273,13 @@ async function loadSvg(file: string, target: HTMLElement): Promise<void> {
   const response = await fetch(file); if (!response.ok) throw new Error(`Could not load ${file}`);
   const xml = new DOMParser().parseFromString(await response.text(), "image/svg+xml");
   if (xml.querySelector("parsererror")) throw new Error(`Invalid diagram: ${file}`);
-  target.replaceChildren(document.importNode(xml.documentElement, true)); bindHops(target);
+  const svg = document.importNode(xml.documentElement, true) as unknown as SVGSVGElement;
+  target.replaceChildren(svg);
+  const viewport = bindDiagramViewport(svg, () => { get<HTMLSelectElement>("diagram-zoom").value = "custom"; });
+  diagramViewports.set(svg, viewport);
+  const zoom = Number(get<HTMLSelectElement>("diagram-zoom").value);
+  if (Number.isFinite(zoom)) viewport.setZoom(zoom / 100);
+  bindHops(target);
 }
 async function renderFlow(flow: Flow): Promise<void> {
   currentFlow = flow; const request = ++flowRequest;
@@ -306,9 +317,9 @@ async function main(): Promise<void> {
     pinned = flow.messages[0]?.id ?? null; await renderFlow(flow); if (pinned) preview(pinned);
   });
   get<HTMLSelectElement>("diagram-zoom").addEventListener("change", event => {
-    document.body.classList.remove("zoom-125", "zoom-150", "zoom-200");
-    const zoom = (event.target as HTMLSelectElement).value;
-    if (zoom !== "100") document.body.classList.add(`zoom-${zoom}`);
+    const scale = Number((event.target as HTMLSelectElement).value) / 100;
+    if (!Number.isFinite(scale)) return;
+    document.querySelectorAll<SVGSVGElement>(".diagram > svg").forEach(svg => diagramViewports.get(svg)?.setZoom(scale));
   });
   get("unpin").addEventListener("click", () => { selectionRequest += 1; pinned = null; get("selection-state").textContent = "Selection unpinned"; highlight(); });
   glossary(document.body);

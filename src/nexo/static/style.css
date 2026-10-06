@@ -22,7 +22,6 @@ code { font-family: ui-monospace, monospace; } .row { display: flex; flex-wrap: 
 body.explorer { max-width: none; padding: 16px; } .explorer-grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(310px, 1.15fr) minmax(340px, 1.3fr); gap: 14px; align-items: start; }
 .explorer-grid section { min-width: 0; padding: 12px; max-height: calc(100vh - 175px); overflow: auto; }
 .diagram svg { width: 100%; min-width: 0; height: auto; display: block; } #architecture svg { min-width: 0; }
-.zoom-125 .diagram svg { width: 125%; } .zoom-150 .diagram svg { width: 150%; } .zoom-200 .diagram svg { width: 200%; }
 .diagram { overflow: auto; } .hop { cursor: pointer; } .hop .hit { stroke: transparent; stroke-width: 20px; fill: none; }
 .hop.active .ink { stroke: #70bbff; stroke-width: 3px; } .hop.active text { fill: #b9dfff; font-weight: 600; }
 .hop.active .background { fill: #193d56; } .hop.pinned .ink { stroke: #c3a0ff; } .hop:focus { outline: none; } .hop:focus .ink { stroke: #ffc56a; stroke-width: 4px; }
@@ -56,3 +55,8 @@ pre.source-code { padding: 8px 0; white-space: normal; }
 .show-all-code { font-size: .8rem; padding: .3rem .45rem; }
 
 .hop.selected text { fill: #ffecb3; }
+
+.diagram-viewport { cursor: grab; touch-action: none; user-select: none; }
+.diagram-viewport.diagram-dragging, .diagram-viewport.diagram-dragging * { cursor: grabbing; }
+.diagram-navigation-help { font-size: .8rem; }
+.annotation-mode .diagram-viewport { touch-action: auto; user-select: auto; }
