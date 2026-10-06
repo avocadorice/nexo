@@ -32,4 +32,11 @@ pre.source-code { padding: 8px 0; white-space: normal; }
 .code-focus { background: #fff0b8; border-left-color: #936200; }
 .line-number { flex: 0 0 3.5em; padding-right: 10px; color: #60707c; text-align: right; user-select: none; }
 .line-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.component { cursor: pointer; } .component.active > rect { fill: #fff0b8; stroke: #936200; stroke-width: 3px; }
+.component.pinned > rect { stroke: #7241b0; } .component:focus { outline: none; } .component:focus > rect { stroke-width: 4px; }
+.community-card { border-top: 1px solid #ccd3d9; margin-top: 16px; }
+.community-picture { display: block; width: 100%; height: 240px; background: #fff; border: 1px solid #ccd3d9; }
+.community-region { fill: #ffdc5e; fill-opacity: .18; stroke: #b36b00; stroke-width: 3px; vector-effect: non-scaling-stroke; }
+.community-controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.community-controls button { font-size: 12px; padding: 5px; }
 @media (max-width: 1050px) { .explorer-grid { grid-template-columns: 1fr; } .explorer-grid section { max-height: none; } .diagram svg { min-width: 0; } }

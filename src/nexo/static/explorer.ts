@@ -1,8 +1,11 @@
 type Source = { file: string; symbol: string; label?: string; line?: number; focus_line?: number; focus_end_line?: number; code?: string; url?: string; status: string; plumbing?: boolean };
-type Component = { id: string; name: string; language: string; deployment: string; scaling: string; status: string; sources: Source[] };
+type Region = { x: number; y: number; width: number; height: number; label: string };
+type Comparison = { diagram: string; regions: Region[]; explanation: string; relationship: string };
+type CommunityDiagram = { id: string; title: string; asset: string; view_box: [number, number, number, number] };
+type Component = { id: string; name: string; language: string; deployment: string; scaling: string; status: string; sources: Source[]; community: Comparison[] };
 type Message = { id: string; arrow: string; label: string; from: string; to: string; mode: string; request: string; response: string; durable?: string; protocol: string; explanation: string; simplification?: string; sources: Source[] };
 type Flow = { id: string; name: string; note: string; messages: Message[] };
-type Data = { components: Component[]; flows: Flow[]; glossary: Record<string, string> };
+type Data = { components: Component[]; flows: Flow[]; glossary: Record<string, string>; community_diagrams: CommunityDiagram[] };
 const get = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 let data: Data;
 let currentFlow: Flow;
@@ -58,14 +61,67 @@ function sourcePanel(parent: HTMLElement, source: Source): void {
 function highlight(): void {
   const message = selected ? messages.get(selected) : undefined;
   const pinMessage = pinned ? messages.get(pinned) : undefined;
+  const componentID = selected?.startsWith("component:") ? selected.slice(10) : undefined;
   document.querySelectorAll<SVGGElement>(".hop").forEach(node => {
-    const active = node.dataset.message ? messages.get(node.dataset.message)?.arrow === message?.arrow : node.dataset.arrow === message?.arrow;
+    const related = node.dataset.message ? [messages.get(node.dataset.message)] : data.flows.flatMap(f => f.messages).filter(m => m.arrow === node.dataset.arrow);
+    const active = componentID ? related.some(m => m?.from === componentID || m?.to === componentID) : node.dataset.message ? messages.get(node.dataset.message)?.arrow === message?.arrow : node.dataset.arrow === message?.arrow;
     const isPin = node.dataset.message ? node.dataset.message === pinMessage?.id : node.dataset.arrow === pinMessage?.arrow;
     node.classList.toggle("active", active); node.classList.toggle("pinned", isPin);
-    node.classList.toggle("selected", node.dataset.message === message?.id);
+    node.classList.toggle("selected", Boolean(message && node.dataset.message === message.id));
+  });
+  document.querySelectorAll<SVGGElement>(".component").forEach(node => {
+    node.classList.toggle("active", componentID === node.dataset.component);
+    node.classList.toggle("pinned", pinned === `component:${node.dataset.component}`);
   });
 }
+function comparisonPanel(parent: HTMLElement, comparison: Comparison): void {
+  const diagram = data.community_diagrams.find(d => d.id === comparison.diagram); if (!diagram) return;
+  const card = appendText(parent, "div", "", "community-card");
+  appendText(card, "h3", diagram.title);
+  appendText(card, "p", `${comparison.relationship} · ${comparison.explanation}`);
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg"); svg.classList.add("community-picture");
+  svg.setAttribute("viewBox", diagram.view_box.join(" ")); svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${diagram.title}: ${comparison.regions.map(r => r.label).join(", ") || "no matching box"}`);
+  const image = document.createElementNS(ns, "image"); image.setAttribute("href", diagram.asset);
+  for (const [i, attr] of ["x", "y", "width", "height"].entries()) image.setAttribute(attr, String(diagram.view_box[i]));
+  svg.append(image);
+  for (const region of comparison.regions) {
+    const rect = document.createElementNS(ns, "rect");
+    for (const attr of ["x", "y", "width", "height"] as const) rect.setAttribute(attr, String(region[attr]));
+    rect.setAttribute("class", "community-region");
+    const title = document.createElementNS(ns, "title"); title.textContent = region.label; rect.append(title); svg.append(rect);
+  }
+  card.append(svg);
+  const controls = appendText(card, "div", "", "community-controls");
+  const overview = appendText(controls, "button", "Whole diagram") as HTMLButtonElement;
+  overview.type = "button";
+  overview.addEventListener("click", () => svg.setAttribute("viewBox", diagram.view_box.join(" ")));
+  for (const region of comparison.regions) {
+    const zoom = appendText(controls, "button", `Zoom: ${region.label}`) as HTMLButtonElement;
+    zoom.type = "button";
+    zoom.addEventListener("click", () => {
+      const padding = Math.max(region.width, region.height) * .25;
+      svg.setAttribute("viewBox", [region.x - padding, region.y - padding, region.width + 2 * padding, region.height + 2 * padding].join(" "));
+    });
+  }
+}
+function previewComponent(id: string): void {
+  const component = data.components.find(c => `component:${c.id}` === id); if (!component) return;
+  selected = id;
+  get("hop-title").textContent = component.name;
+  get("selection-state").textContent = pinned === id ? "Pinned" : pinned ? "Previewing · pinned selection returns on exit" : "Preview";
+  const panel = get("code-panel"); panel.replaceChildren();
+  appendText(panel, "p", "Highlighted areas show the closest roles in the two community designs. They do not mean the implementations are identical.");
+  appendText(panel, "p", "Click a Nexo box to keep this comparison open. Use Zoom to read a highlighted box in its original picture.", "muted");
+  component.community.forEach(comparison => comparisonPanel(panel, comparison));
+  appendText(panel, "h3", "Nexo implementation");
+  appendText(panel, "p", `${component.language} · ${component.deployment}. ${component.scaling}`);
+  component.sources.forEach(source => sourcePanel(panel, source));
+  glossary(panel); glossary(get("hop-title")); highlight();
+}
 function preview(id: string): void {
+  if (id.startsWith("component:")) { previewComponent(id); return; }
   const message = messages.get(id); if (!message) return;
   selected = id;
   get("hop-title").textContent = message.label;
@@ -89,15 +145,19 @@ function preview(id: string): void {
   glossary(panel); highlight();
 }
 function bindHops(root: HTMLElement): void {
-  root.querySelectorAll<SVGGElement>(".hop").forEach(node => {
-    const resolve = (): Message | undefined => node.dataset.message ? messages.get(node.dataset.message) : currentFlow.messages.find(m => m.arrow === node.dataset.arrow) ?? data.flows.flatMap(flow => flow.messages).find(m => m.arrow === node.dataset.arrow);
+  const flowFor = (id: string): Flow | undefined => {
+    const belongs = (flow: Flow): boolean => flow.messages.some(m => id.startsWith("component:") ? m.from === id.slice(10) || m.to === id.slice(10) : m.id === id);
+    return belongs(currentFlow) ? currentFlow : data.flows.find(belongs);
+  };
+  root.querySelectorAll<SVGGElement>(".hop, .component").forEach(node => {
+    const resolve = (): string | undefined => node.dataset.component ? `component:${node.dataset.component}` : node.dataset.message ?? (currentFlow.messages.find(m => m.arrow === node.dataset.arrow) ?? data.flows.flatMap(flow => flow.messages).find(m => m.arrow === node.dataset.arrow))?.id;
     const choose = async (pin: boolean): Promise<void> => {
       const request = ++selectionRequest;
-      const message = resolve(); if (!message) return;
-      if (pin) pinned = message.id;
-      const flow = data.flows.find(flow => flow.messages.some(item => item.id === message.id));
+      const id = resolve(); if (!id) return;
+      if (pin) pinned = id;
+      const flow = flowFor(id);
       if (flow && currentFlow.id !== flow.id) await renderFlow(flow);
-      if (request === selectionRequest) preview(message.id);
+      if (request === selectionRequest) preview(id);
     };
     node.addEventListener("pointerenter", () => void choose(false));
     node.addEventListener("focus", () => void choose(false));
@@ -107,7 +167,9 @@ function bindHops(root: HTMLElement): void {
       const request = ++selectionRequest;
       const id = pinned;
       if (!id) return;
-      const flow = data.flows.find(f => f.messages.some(m => m.id === id));
+      const flow = flowFor(id);
+      // Keep pinned controls in place when focus moves from the diagram into the panel.
+      if (id === selected && flow?.id === currentFlow.id) return;
       if (flow && flow.id !== currentFlow.id) await renderFlow(flow);
       if (request === selectionRequest) preview(id);
     };

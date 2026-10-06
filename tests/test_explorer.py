@@ -165,3 +165,31 @@ def test_create_response_is_drawn_after_durable_commit(tmp_path):
         if item.attrib.get("aria-label", "").endswith(" response") and "data-message" in item.attrib
     ]
     assert responses.index("create-commit") < responses.index("create-http")
+
+
+def test_community_copies_stay_unchanged_and_boxes_are_selectable(tmp_path):
+    data = builder.build(ROOT, tmp_path, compile_ts=False)
+    for diagram in data["community_diagrams"]:
+        original = (ROOT / "explorer/references" / diagram["file"]).read_bytes()
+        assert (tmp_path / diagram["asset"]).read_bytes() == original
+        workspace_original = ROOT.parent / "theory" / diagram["file"]
+        if workspace_original.exists():
+            assert workspace_original.read_bytes() == original
+    document = ElementTree.parse(tmp_path / "architecture.svg")
+    boxes = [node for node in document.iter() if "data-component" in node.attrib]
+    assert {node.attrib["data-component"] for node in boxes} == {
+        c["id"] for c in data["components"]
+    }
+    assert all(node.attrib["role"] == "button" and node.attrib["tabindex"] == "0" for node in boxes)
+
+
+def test_community_map_rejects_missing_counterpart_or_out_of_bounds_region():
+    mapping = json.loads((ROOT / "explorer/mapping.json").read_text())
+    incomplete = copy.deepcopy(mapping)
+    incomplete["components"][0]["community"].pop()
+    with pytest.raises(ValueError, match="Missing community comparison"):
+        builder.validate(incomplete)
+    outside = copy.deepcopy(mapping)
+    outside["components"][0]["community"][0]["regions"][0]["x"] = -1
+    with pytest.raises(ValueError, match="Community region outside"):
+        builder.validate(outside)

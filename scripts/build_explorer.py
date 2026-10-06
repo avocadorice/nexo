@@ -6,11 +6,13 @@ import argparse
 import ast
 import copy
 import json
+import math
 import re
 import subprocess
 import textwrap
 from pathlib import Path
 from urllib.parse import quote
+from xml.etree import ElementTree
 from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -189,6 +191,37 @@ def validate(mapping: dict) -> None:
         raise ValueError("Duplicate message IDs")
     if used_arrows != set(arrow_ids):
         raise ValueError(f"Unmapped arrows: {set(arrow_ids) - used_arrows}")
+    diagrams = {item["id"]: item for item in mapping["community_diagrams"]}
+    if len(diagrams) != len(mapping["community_diagrams"]):
+        raise ValueError("Duplicate community diagram IDs")
+    for component in mapping["components"]:
+        comparisons = component["community"]
+        if len(comparisons) != len(diagrams) or {c["diagram"] for c in comparisons} != set(
+            diagrams
+        ):
+            raise ValueError(f"Missing community comparison for {component['id']}")
+        for comparison in comparisons:
+            if not comparison["explanation"] or comparison["relationship"] not in {
+                "equivalent",
+                "combined",
+                "partial",
+                "not shown",
+            }:
+                raise ValueError("Community comparison needs an explanation and relationship")
+            if bool(comparison["regions"]) == (comparison["relationship"] == "not shown"):
+                raise ValueError("Only a 'not shown' comparison may have no regions")
+            left, top, width, height = diagrams[comparison["diagram"]]["view_box"]
+            for region in comparison["regions"]:
+                x, y, w, h = (region[key] for key in ("x", "y", "width", "height"))
+                if not all(math.isfinite(n) for n in (x, y, w, h)) or not (
+                    w > 0
+                    and h > 0
+                    and x >= left
+                    and y >= top
+                    and x + w <= left + width
+                    and y + h <= top + height
+                ):
+                    raise ValueError(f"Community region outside diagram: {region['label']}")
 
 
 def svg_start(width: int, height: int, title: str) -> str:
@@ -246,7 +279,9 @@ def architecture(mapping: dict, glossary: dict) -> str:
         x, y = box["position"]
         fill = "#fff5e8" if box.get("external") else "#f2f5f8"
         parts.append(
-            f'<g><rect x="{x}" y="{y}" width="{box_width}" height="{box_height}" rx="5" '
+            f'<g class="component" data-component="{box["id"]}" tabindex="0" role="button" '
+            f'aria-label="{escape(box["name"])}: compare community diagrams">'
+            f'<rect x="{x}" y="{y}" width="{box_width}" height="{box_height}" rx="5" '
             f'fill="{fill}" stroke="#455c6b" stroke-width="1.5"/>'
         )
         center = x + box_width / 2
@@ -368,6 +403,19 @@ def build(
     data["glossary"] = glossary
     output.mkdir(parents=True, exist_ok=True)
     (output / "sequences").mkdir(exist_ok=True)
+    for diagram in mapping["community_diagrams"]:
+        source = (root / "explorer/references" / diagram["file"]).resolve()
+        target = (output / diagram["asset"]).resolve()
+        if not source.is_relative_to(
+            (root / "explorer/references").resolve()
+        ) or not target.is_relative_to(output.resolve()):
+            raise ValueError("Community diagram paths must stay within their directories")
+        content = source.read_bytes()
+        view_box = [float(n) for n in ElementTree.fromstring(content).attrib["viewBox"].split()]
+        if view_box != diagram["view_box"]:
+            raise ValueError(f"Community viewBox differs from mapping: {diagram['id']}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
     (output / "explorer-data.json").write_text(json.dumps(data, indent=2) + "\n")
     (output / "architecture.svg").write_text(architecture(mapping, glossary))
     for flow in mapping["flows"]:

@@ -27,7 +27,37 @@
       "scaling": "No background polling. Bounded API lists, manual refresh.",
       "status": "implemented",
       "external": false,
-      "deployment_label": "Browser"
+      "deployment_label": "Browser",
+      "community": [
+        {
+          "diagram": "batch-export",
+          "relationship": "partial",
+          "explanation": "The bank app or website is the customer-facing part of Nexo\u2019s browser UI. Nexo also adds an operations view for batches and delivery attempts; this reference does not draw that view.",
+          "regions": [
+            {
+              "x": 1390.09,
+              "y": 942.57,
+              "width": 203.72,
+              "height": 303.91,
+              "label": "User: bank app or website"
+            }
+          ]
+        },
+        {
+          "diagram": "durable-delivery",
+          "relationship": "partial",
+          "explanation": "Frontend is the closest match to Nexo\u2019s customer UI. Nexo also provides an operations view. The reference discusses internal clients, while Nexo authorizes each customer to see only their own disputes.",
+          "regions": [
+            {
+              "x": 12736.84,
+              "y": 710.31,
+              "width": 304.38,
+              "height": 165.09,
+              "label": "Frontend"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "api",
@@ -65,7 +95,51 @@
       "scaling": "Add API replicas to handle more requests. Each pod allows 200 API requests at once; extra requests get HTTP 429 and Retry-After: 1. This keeps work from piling up at the database connection pool. Request bodies are limited to 4 KiB.",
       "status": "implemented",
       "external": false,
-      "deployment_label": "Deployment/api"
+      "deployment_label": "Deployment/api",
+      "community": [
+        {
+          "diagram": "batch-export",
+          "relationship": "combined",
+          "explanation": "Nexo\u2019s Go API combines chargeback validation and request handling with authentication, authorization and request limits. The reference separates those responsibilities into a chargeback service and an API gateway. Kubernetes routes traffic to API replicas.",
+          "regions": [
+            {
+              "x": 2126.07,
+              "y": 659.83,
+              "width": 290.79,
+              "height": 210.0,
+              "label": "Chargeback service"
+            },
+            {
+              "x": 1700.2,
+              "y": 583.26,
+              "width": 253.1,
+              "height": 1196.15,
+              "label": "API gateway"
+            }
+          ]
+        },
+        {
+          "diagram": "durable-delivery",
+          "relationship": "combined",
+          "explanation": "The chargeback service and API gateway together cover Nexo\u2019s Go API. Nexo handles authentication, customer ownership, request limits and idempotent creation in that one service; it does not deploy a separate gateway.",
+          "regions": [
+            {
+              "x": 13979.96,
+              "y": 581.3,
+              "width": 304.38,
+              "height": 190.82,
+              "label": "Chargeback service"
+            },
+            {
+              "x": 13613.16,
+              "y": 684.5,
+              "width": 154.77,
+              "height": 334.05,
+              "label": "API gateway"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "postgres",
@@ -97,7 +171,65 @@
       "scaling": "Four logical partitions; eligibility and due-work indexes. Physical sharding is not implemented. Managed cloud PostgreSQL is proposed, not provisioned.",
       "status": "implemented",
       "external": false,
-      "deployment_label": "StatefulSet/postgres"
+      "deployment_label": "StatefulSet/postgres",
+      "community": [
+        {
+          "diagram": "batch-export",
+          "relationship": "combined",
+          "explanation": "Nexo keeps the relational database role and stores pending work in the same PostgreSQL tables. Eligible chargeback rows and due batch rows replace the work handoffs shown through Kafka. Nexo does not implement Kafka, change data capture or a replayable event stream. Audit records are written in the same database transaction.",
+          "regions": [
+            {
+              "x": 2799.43,
+              "y": 572.89,
+              "width": 347.6,
+              "height": 356.43,
+              "label": "Database"
+            },
+            {
+              "x": 2135.02,
+              "y": 1239.48,
+              "width": 380.17,
+              "height": 132.77,
+              "label": "Kafka stream: event handoff"
+            },
+            {
+              "x": 2996.02,
+              "y": 1186.23,
+              "width": 282.56,
+              "height": 124.61,
+              "label": "Kafka: chunk work handoff"
+            }
+          ]
+        },
+        {
+          "diagram": "durable-delivery",
+          "relationship": "combined",
+          "explanation": "Nexo combines the Database and Delivery queue roles in PostgreSQL: a pending chargeback waits for a batch, and a due batch waits for a worker. The reference also uses Kafka to absorb incoming bursts. Nexo instead uses durable rows and API request limits; it does not provide Kafka\u2019s independent event stream.",
+          "regions": [
+            {
+              "x": 14395.81,
+              "y": 744.38,
+              "width": 175.41,
+              "height": 175.41,
+              "label": "Database"
+            },
+            {
+              "x": 13840.86,
+              "y": 1103.16,
+              "width": 178.7,
+              "height": 88.31,
+              "label": "Delivery queue"
+            },
+            {
+              "x": 14564.27,
+              "y": 1154.93,
+              "width": 416.62,
+              "height": 140.0,
+              "label": "Kafka: incoming work"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "scheduler",
@@ -124,7 +256,37 @@
       "scaling": "00:00, 06:00, 12:00 and 18:00 UTC. Replays share durable slot and assignment records.",
       "status": "implemented",
       "external": false,
-      "deployment_label": "CronJob/schedule"
+      "deployment_label": "CronJob/schedule",
+      "community": [
+        {
+          "diagram": "batch-export",
+          "relationship": "equivalent",
+          "explanation": "Both designs use a scheduled trigger four times per day. Nexo\u2019s Kubernetes CronJob starts a bounded build Job for the intended UTC cutoff. PostgreSQL records the slot so a replay resumes the same work.",
+          "regions": [
+            {
+              "x": 2722.19,
+              "y": 1514.13,
+              "width": 127.5,
+              "height": 123.84,
+              "label": "CRON job"
+            }
+          ]
+        },
+        {
+          "diagram": "durable-delivery",
+          "relationship": "partial",
+          "explanation": "Both designs separate the clock from delivery. This reference schedules ready files for sending; Nexo\u2019s CronJob claims and builds files for each cutoff, then delivery workers pick up ready batches. Nexo allows multiple bounded files in each of four daily windows, rather than at most four files per day.",
+          "regions": [
+            {
+              "x": 13966.67,
+              "y": 869.18,
+              "width": 304.38,
+              "height": 165.09,
+              "label": "CRON JOB / file scheduler"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "builder",
@@ -151,7 +313,51 @@
       "scaling": "BATCH_MAX_ROWS limits rows per file; SCHEDULE_MAX_BATCHES limits new batches per run. A database lock allows one active scheduler.",
       "status": "implemented",
       "external": false,
-      "deployment_label": "Job (schedule)"
+      "deployment_label": "Job (schedule)",
+      "community": [
+        {
+          "diagram": "batch-export",
+          "relationship": "combined",
+          "explanation": "Nexo\u2019s Python Job covers the batch manager and file export workers, plus the finalizer\u2019s file-building responsibility. It claims a bounded set of rows, writes one immutable CSV per batch and archives it. Nexo does not split one batch into chunk files or merge those chunks; delivery is a separate worker.",
+          "regions": [
+            {
+              "x": 2582.31,
+              "y": 1136.81,
+              "width": 253.24,
+              "height": 260.0,
+              "label": "Batch manager service"
+            },
+            {
+              "x": 3284.9,
+              "y": 1478.24,
+              "width": 250.9,
+              "height": 215.77,
+              "label": "File export workers"
+            },
+            {
+              "x": 3511.37,
+              "y": 1034.69,
+              "width": 245.28,
+              "height": 285.0,
+              "label": "Finalizer: file assembly"
+            }
+          ]
+        },
+        {
+          "diagram": "durable-delivery",
+          "relationship": "equivalent",
+          "explanation": "The Batch builder worker is the same role: atomically claim chargebacks, preserve membership and order, generate a CSV and save its identity. Nexo runs this Python code as a bounded Kubernetes Job and starts it from the scheduled slot, without a Kafka consumer.",
+          "regions": [
+            {
+              "x": 15230.0,
+              "y": 1207.66,
+              "width": 147.34,
+              "height": 252.0,
+              "label": "Batch builder worker"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "storage",
@@ -179,7 +385,37 @@
       "scaling": "The batch ID determines the object key. Files are limited to 10,000 rows / 4 MiB. SeaweedFS runs locally; cloud object storage has not been provisioned.",
       "status": "implemented",
       "external": false,
-      "deployment_label": "StatefulSet / S3"
+      "deployment_label": "StatefulSet / S3",
+      "community": [
+        {
+          "diagram": "batch-export",
+          "relationship": "partial",
+          "explanation": "Both archive the final immutable CSV in object storage. This reference also stores intermediate chunk files; Nexo creates a bounded final file directly. Nexo uses the S3 protocol with SeaweedFS locally and planned DigitalOcean Spaces in the cloud.",
+          "regions": [
+            {
+              "x": 3785.94,
+              "y": 1449.01,
+              "width": 304.19,
+              "height": 368.0,
+              "label": "S3: chunk and final files"
+            }
+          ]
+        },
+        {
+          "diagram": "durable-delivery",
+          "relationship": "equivalent",
+          "explanation": "The S3 archive corresponds to Nexo\u2019s immutable CSV storage. The batch records its object key, byte count and SHA-256 digest so the delivery worker can verify and resend the same bytes when safe. Nexo uses S3-compatible storage, not necessarily the AWS service.",
+          "regions": [
+            {
+              "x": 15177.6,
+              "y": 990.39,
+              "width": 147.34,
+              "height": 153.69,
+              "label": "S3: immutable CSV archive"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "worker",
@@ -206,7 +442,44 @@
       "scaling": "Each process handles one transfer at a time and reads up to 20 due batches. More replicas can handle different batches; a database lock prevents two workers handling the same batch.",
       "status": "implemented",
       "external": false,
-      "deployment_label": "Deployment/worker"
+      "deployment_label": "Deployment/worker",
+      "community": [
+        {
+          "diagram": "batch-export",
+          "relationship": "combined",
+          "explanation": "Nexo\u2019s Go worker covers the finalizer\u2019s transfer responsibility and the part of reconciliation that checks file acknowledgements. It does not merge chunk files or decide the customer\u2019s dispute. It retries the same batch identity, checks remote evidence and preserves unknown outcomes when submission cannot be proved.",
+          "regions": [
+            {
+              "x": 3511.37,
+              "y": 1034.69,
+              "width": 245.28,
+              "height": 285.0,
+              "label": "Finalizer: file delivery"
+            },
+            {
+              "x": 3902.44,
+              "y": 380.67,
+              "width": 328.04,
+              "height": 220.41,
+              "label": "Reconciliation service"
+            }
+          ]
+        },
+        {
+          "diagram": "durable-delivery",
+          "relationship": "equivalent",
+          "explanation": "Delivery Worker is the same role: read the archived CSV, send it over SFTP and record each attempt. Nexo polls durable batch rows instead of a separate delivery queue, and reads acknowledgement files instead of receiving the reference\u2019s HTTP callback.",
+          "regions": [
+            {
+              "x": 13921.27,
+              "y": 1227.79,
+              "width": 304.38,
+              "height": 165.09,
+              "label": "Delivery Worker"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "receiver",
@@ -234,7 +507,37 @@
       "scaling": "One receiver with persistent volume and SQLite receipts. This is a simulator, not card-network certification.",
       "status": "implemented",
       "external": true,
-      "deployment_label": "card-network namespace"
+      "deployment_label": "card-network namespace",
+      "community": [
+        {
+          "diagram": "batch-export",
+          "relationship": "partial",
+          "explanation": "This is the external card-network boundary. Nexo substitutes a clearly labeled Visa/Mastercard simulator using real SFTP and a documented teaching CSV and acknowledgement contract. It does not connect to actual card networks or implement their proprietary formats.",
+          "regions": [
+            {
+              "x": 4487.15,
+              "y": 1229.91,
+              "width": 272.42,
+              "height": 267.24,
+              "label": "Visa/Mastercard service"
+            }
+          ]
+        },
+        {
+          "diagram": "durable-delivery",
+          "relationship": "partial",
+          "explanation": "External Payment Network is the boundary simulated by Nexo. The simulator accepts Visa and Mastercard files over real SFTP, preserves receipts and can trigger delivery failures. Its CSV and acknowledgement formats are teaching contracts, not card-network certification.",
+          "regions": [
+            {
+              "x": 14148.49,
+              "y": 1569.81,
+              "width": 347.51,
+              "height": 212.0,
+              "label": "External Payment Network"
+            }
+          ]
+        }
+      ]
     }
   ],
   "arrows": [
@@ -1275,5 +1578,31 @@
     "height": 745,
     "box_width": 140,
     "box_height": 90
-  }
+  },
+  "community_diagrams": [
+    {
+      "id": "batch-export",
+      "title": "Community: batch export",
+      "file": "excalidraw-chargeback-community-solution-batch-export.svg",
+      "asset": "community/batch-export.svg",
+      "view_box": [
+        0.0,
+        0.0,
+        4820.0,
+        2620.0
+      ]
+    },
+    {
+      "id": "durable-delivery",
+      "title": "Community: durable delivery",
+      "file": "excalidraw-chargeback-community-solution-durable-delivery.svg",
+      "asset": "community/durable-delivery.svg",
+      "view_box": [
+        0.0,
+        0.0,
+        17099.60081793371,
+        10007.549206779035
+      ]
+    }
+  ]
 }
