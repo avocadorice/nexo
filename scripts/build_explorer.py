@@ -275,8 +275,8 @@ def svg_start(width: int, height: int, title: str) -> str:
         f'role="group" aria-label="{escape(title)}"><title>{escape(title)}</title>'
         '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" '
         'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
-        '<path d="M 0 0 L 10 5 L 0 10 z" fill="#455c6b"/></marker></defs>'
-        '<rect width="100%" height="100%" fill="white"/>'
+        '<path d="M 0 0 L 10 5 L 0 10 z" fill="#a0b6c7"/></marker></defs>'
+        '<rect width="100%" height="100%" fill="#18232e"/>'
     )
 
 
@@ -287,7 +287,7 @@ def label(
     glossary: dict,
     size: int = 12,
     anchor: str = "middle",
-    color: str = "#18232b",
+    color: str = "#e0e8ef",
 ) -> str:
     definitions = [
         f"{term}: {meaning}"
@@ -314,7 +314,7 @@ def architecture(mapping: dict, glossary: dict) -> str:
             f'<g class="hop" data-arrow="{arrow["id"]}" tabindex="0" role="button" '
             f'aria-label="{escape(arrow["label"])}"><path class="hit" d="{path}" '
             'stroke="transparent" stroke-width="20" fill="none"/>'
-            f'<path class="ink" d="{path}" fill="none" stroke="#455c6b" '
+            f'<path class="ink" d="{path}" fill="none" stroke="#a0b6c7" '
             f'stroke-width="1.6" marker-end="url(#arrow)"{dash}/>'
         )
         x, y = arrow["label_at"]
@@ -322,12 +322,12 @@ def architecture(mapping: dict, glossary: dict) -> str:
         parts.append("</g>")
     for box in boxes.values():
         x, y = box["position"]
-        fill = "#fff5e8" if box.get("external") else "#f2f5f8"
+        fill = "#382f26" if box.get("external") else "#243544"
         parts.append(
             f'<g class="component" data-component="{box["id"]}" tabindex="0" role="button" '
             f'aria-label="{escape(box["name"])}: compare community diagrams">'
             f'<rect x="{x}" y="{y}" width="{box_width}" height="{box_height}" rx="5" '
-            f'fill="{fill}" stroke="#455c6b" stroke-width="1.5"/>'
+            f'fill="{fill}" stroke="#a0b6c7" stroke-width="1.5"/>'
         )
         center = x + box_width / 2
         for index, line in enumerate(textwrap.wrap(box["name"], 21)):
@@ -335,7 +335,7 @@ def architecture(mapping: dict, glossary: dict) -> str:
         parts.append(label(box["language"], center, y + 57, glossary, 10))
         parts.append(label(box["deployment_label"], center, y + 75, glossary, 9))
         if box["status"] == "not implemented":
-            parts.append(label("NOT IMPLEMENTED", center, y - 7, glossary, 11, color="#a83232"))
+            parts.append(label("NOT IMPLEMENTED", center, y - 7, glossary, 11, color="#ff9b9b"))
         parts.append("</g>")
     parts.append(
         label("PostgreSQL is the durable work queue.", width / 2, height - 12, glossary, 11)
@@ -378,8 +378,8 @@ def sequence(flow: dict, mapping: dict, glossary: dict) -> str:
         x = positions[component]
         parts.append(
             f'<rect x="{x - 56}" y="12" width="112" height="65" rx="4" '
-            f'fill="#f2f5f8" stroke="#778b98"/><path d="M {x} 77 V {height - 12}" '
-            'stroke="#bcc8d0" stroke-dasharray="4 5"/>'
+            f'fill="#243544" stroke="#7891a5"/><path d="M {x} 77 V {height - 12}" '
+            'stroke="#425869" stroke-dasharray="4 5"/>'
         )
         for index, line in enumerate(textwrap.wrap(box["name"], 17)):
             parts.append(label(line, x, 30 + index * 13, glossary, 11))
@@ -398,7 +398,7 @@ def sequence(flow: dict, mapping: dict, glossary: dict) -> str:
             f'<g class="hop" data-message="{message["id"]}" tabindex="0" role="button" '
             f'aria-label="{escape(message["label"])} {kind}"><rect class="background" '
             f'x="4" y="{y - 15}" width="{width - 8}" height="{event_height - 5}" '
-            'rx="4" fill="white" fill-opacity=".7"/>'
+            'rx="4" fill="#18232e" fill-opacity=".7"/>'
         )
         heading = f"{index}. {message['label']} · {kind}"
         if not is_response:
@@ -410,13 +410,13 @@ def sequence(flow: dict, mapping: dict, glossary: dict) -> str:
             parts.append(label(line, width / 2, y + 40 + offset * 14, glossary, 11))
         parts.append(
             f'<path class="ink" d="M {left} {y + 76} H {end}" fill="none" '
-            f'stroke="#455c6b" marker-end="url(#arrow)"{dash}/>'
+            f'stroke="#a0b6c7" marker-end="url(#arrow)"{dash}/>'
         )
         if is_response and message.get("durable"):
             lines = textwrap.wrap("◆ " + message["durable"], width // 6)[:3]
             for offset, line in enumerate(lines):
                 parts.append(
-                    label(line, width / 2, y + 101 + offset * 14, glossary, 11, color="#246745")
+                    label(line, width / 2, y + 101 + offset * 14, glossary, 11, color="#8cdeb0")
                 )
         parts.append("</g>")
         y += event_height

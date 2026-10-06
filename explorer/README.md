@@ -33,6 +33,8 @@ Then use **Open via local helper** from `http://localhost:8080/static/explorer.h
 
 The browser source is TypeScript. `explorer/tsconfig.json` compiles it to `src/nexo/static/build/`. No framework, runtime dependency or animation is required. The API's content security policy permits these same-origin external scripts and styles.
 
+The UI and generated Nexo diagrams use a dark palette by default. The preserved community SVGs retain their original colors.
+
 Hover or focus an architecture box to compare its role with both community designs. Click or Enter pins the comparison; the related sequence steps stay highlighted. Each picture keeps its original layout. Yellow outlines locate related boxes, and the Zoom buttons make their labels readable. The explanation calls out combined or partial matches: for example, Nexo's PostgreSQL rows cover roles shown as a database, Kafka, and a delivery queue in the references.
 
 `community_diagrams` and each component's `community` entries in `mapping.json` supply the reference assets, original SVG coordinates, and explanations. `explorer/references/` contains byte-for-byte copies of the reference SVGs in `theory/` so Docker builds are self-contained. The builder copies these unchanged; the browser draws highlights in a separate SVG layer. The reference files in `theory/` are never edited. Tests check reference bytes, coordinate bounds, comparison coverage, and keyboard-accessible boxes.
