@@ -61,7 +61,11 @@ func New(pool *pgxpool.Pool, partitions int, staticDir string) http.Handler {
 	return ObserveAndLimit(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'")
+		policy := "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'"
+		if r.URL.Path == "/static/explorer.html" && (r.Host == "localhost:8080" || r.Host == "127.0.0.1:8080") {
+			policy += "; connect-src 'self' http://127.0.0.1:8765"
+		}
+		w.Header().Set("Content-Security-Policy", policy)
 		w.Header().Set("Cache-Control", "no-store")
 		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 		defer cancel()

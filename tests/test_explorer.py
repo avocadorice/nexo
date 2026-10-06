@@ -90,6 +90,7 @@ def test_focus_range_tracks_source_edits_and_links_to_call_not_context(tmp_path)
         assert result["focus_line"] == padding + 3
         assert result["focus_end_line"] == padding + 5
         assert result["url"] == f"vscode://file/local%20checkout/sample.py:{padding + 3}"
+        assert result["location"] == f"/local checkout/sample.py:{padding + 3}"
         assert (
             result["code"] == "    prepare()\n    client.upload(\n        body,\n    )\n    done()"
         )

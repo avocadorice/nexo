@@ -40,3 +40,7 @@ pre.source-code { padding: 8px 0; white-space: normal; }
 .community-controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .community-controls button { font-size: 12px; padding: 5px; }
 @media (max-width: 1050px) { .explorer-grid { grid-template-columns: 1fr; } .explorer-grid section { max-height: none; } .diagram svg { min-width: 0; } }
+.source-controls { display: flex; flex-wrap: wrap; gap: .35rem; margin: .4rem 0; }
+.source-controls button { font-size: .8rem; padding: .3rem .45rem; }
+.source-status:empty { display: none; }
+.source-status { font-size: .85rem; }

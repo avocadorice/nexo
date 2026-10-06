@@ -145,11 +145,13 @@ def resolve_source(root: Path, source: dict, source_root: str) -> dict:
             raise ValueError(f"Excerpt must contain focused lines: {relative}:{source['symbol']}")
         line += offset
         code = "\n".join(parts[offset:excerpt_end])
-    target = quote(source_root.rstrip("/") + "/" + str(relative), safe="/")
+    location = source_root.rstrip("/") + "/" + str(relative)
+    target = quote(location, safe="/")
     result.update(
         status="implemented",
         line=line,
         code=code,
+        location=f"{location}:{result.get('focus_line', line)}",
         url=f"vscode://file{target}:{result.get('focus_line', line)}",
     )
     return result

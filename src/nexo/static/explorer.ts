@@ -1,4 +1,4 @@
-type Source = { file: string; symbol: string; label?: string; line?: number; focus_line?: number; focus_end_line?: number; code?: string; url?: string; status: string; plumbing?: boolean };
+type Source = { file: string; symbol: string; label?: string; line?: number; focus_line?: number; focus_end_line?: number; code?: string; url?: string; location?: string; status: string; plumbing?: boolean };
 type Region = { x: number; y: number; width: number; height: number; label: string };
 type Comparison = { diagram: string; regions: Region[]; explanation: string; relationship: string };
 type CommunityDiagram = { id: string; title: string; asset: string; view_box: [number, number, number, number] };
@@ -45,6 +45,40 @@ function sourcePanel(parent: HTMLElement, source: Source): void {
   const link = document.createElement("a"); link.className = "source-ref"; link.href = source.url ?? "#";
   link.textContent = `${source.file}:${source.focus_line ?? source.line} · ${source.symbol} · Open in VS Code${source.plumbing ? " · plumbing" : ""}`;
   parent.append(link);
+  const controls = appendText(parent, "div", "", "source-controls");
+  const copy = appendText(controls, "button", "Copy location") as HTMLButtonElement;
+  copy.type = "button";
+  const open = appendText(controls, "button", "Open via local helper") as HTMLButtonElement;
+  open.type = "button";
+  const status = appendText(parent, "p", "", "source-status muted"); status.setAttribute("role", "status");
+  const location = document.createElement("input"); location.type = "text"; location.readOnly = true;
+  location.value = source.location ?? `${source.file}:${source.focus_line ?? source.line}`;
+  location.setAttribute("aria-label", "Source location to copy"); location.hidden = true; parent.append(location);
+  copy.addEventListener("click", () => {
+    location.hidden = false;
+    void navigator.clipboard?.writeText(location.value).then(() => {
+      status.textContent = "Copied. Paste into VS Code’s Quick Open (Cmd+P).";
+    }).catch(() => {
+      location.focus(); location.select(); status.textContent = "Press Cmd+C to copy, then paste into VS Code’s Quick Open (Cmd+P).";
+    });
+    if (!navigator.clipboard) {
+      location.focus(); location.select(); status.textContent = "Press Cmd+C to copy, then paste into VS Code’s Quick Open (Cmd+P).";
+    }
+  });
+  open.addEventListener("click", async () => {
+    open.disabled = true; status.textContent = "Opening source…";
+    try {
+      const response = await fetch("http://127.0.0.1:8765/open", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Nexo-Editor": "1" },
+        body: JSON.stringify({ file: source.file, line: source.focus_line ?? source.line }),
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) throw new Error("Editor helper could not open this location.");
+      status.textContent = "Opened in VS Code.";
+    } catch {
+      status.textContent = "Run python3 scripts/editor_helper.py in your local Nexo checkout, then try again from localhost:8080. Copy location also works without the helper.";
+    } finally { open.disabled = false; }
+  });
   const pre = document.createElement("pre"); pre.className = "source-code";
   pre.setAttribute("aria-label", `${source.symbol}${source.focus_line ? `; highlighted lines ${source.focus_line} to ${source.focus_end_line}` : ""}`);
   const code = document.createElement("code");

@@ -17,6 +17,16 @@ Missing or ambiguous symbols and focus anchors, reversed or clipped highlight ra
 
 VS Code links use the build machine's checkout path by default. Container/cloud builds should pass the user's local path, for example `python scripts/build_explorer.py --source-root /Users/you/projects/nexo`, so those links open the matching local checkout. Rebuild after source changes; excerpts and line numbers are always extracted, never copied.
 
+Each excerpt also has **Copy location**, which copies the absolute `file:line` for VS Code's Quick Open (Cmd+P). The location stays visible for manual copying when a browser denies clipboard access. The original `vscode://` link remains available in browsers that support it.
+
+For embedded browsers that do not launch `vscode://` links, run this in your local checkout and leave it running while studying:
+
+```sh
+python3 scripts/editor_helper.py
+```
+
+Then use **Open via local helper** from `http://localhost:8080/static/explorer.html` or `http://127.0.0.1:8080/static/explorer.html`. Stop the helper with Ctrl+C. It listens only on `127.0.0.1:8765` and runs `code --reuse-window --goto` for a mapped source file inside this checkout. It checks the requesting origin, host, JSON content type, custom header, path and line; arbitrary commands and files outside Nexo are rejected. It is a local study tool, not a cloud workload. Public deployments use Copy location or the original link. The API permits helper connections only from the explorer page's content security policy.
+
 The browser source is TypeScript. `explorer/tsconfig.json` compiles it to `src/nexo/static/build/`. No framework, runtime dependency or animation is required. The API's content security policy permits these same-origin external scripts and styles.
 
 Hover or focus an architecture box to compare its role with both community designs. Click or Enter pins the comparison; the related sequence steps stay highlighted. Each picture keeps its original layout. Yellow outlines locate related boxes, and the Zoom buttons make their labels readable. The explanation calls out combined or partial matches: for example, Nexo's PostgreSQL rows cover roles shown as a database, Kafka, and a delivery queue in the references.
