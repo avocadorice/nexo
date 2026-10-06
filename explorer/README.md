@@ -2,6 +2,8 @@
 
 `mapping.json` is the single source for architecture boxes and arrows, ordered sequence messages, request/response descriptions, code symbols, languages, deployment objects and simplifications. `docs/glossary.json` supplies every tooltip definition. Generated SVG and JSON files are build output and must not be edited.
 
+The glossary retains Nexo-specific meanings and the previously requested idempotency explanations. Other terms are opt-in: add them only when the user requests them, through feedback queued with `/nexo-add-glossary`. Languages, common acronyms and general computing vocabulary are left as plain text.
+
 ```sh
 npm ci --prefix explorer
 python scripts/build_explorer.py
