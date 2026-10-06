@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import subprocess
+import sys
 from http.client import HTTPConnection
 from pathlib import Path
 from threading import Thread
@@ -11,6 +12,7 @@ from unittest.mock import Mock
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
 spec = importlib.util.spec_from_file_location("editor_helper", ROOT / "scripts/editor_helper.py")
 helper = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helper)
@@ -138,7 +140,7 @@ def test_forged_or_unsafe_http_request_never_launches_editor(server, headers):
         {"path": "/unknown"},
         {"body": "not json"},
         {"body": "null"},
-        {"body": '[]'},
+        {"body": "[]"},
         {"body": '{"file":"source file.py","line":2,"command":"touch /tmp/x"}'},
         {"body": '{"file":".local/secret.env","line":1}'},
         {"body": '{"file":"../outside.py","line":1}'},

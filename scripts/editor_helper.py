@@ -9,6 +9,8 @@ import subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
+from annotation_queue import AnnotationQueue, Conflict
+
 ROOT = Path(__file__).resolve().parents[1]
 PORT = 8765
 ORIGINS = {"http://localhost:8080", "http://127.0.0.1:8080"}
@@ -33,9 +35,7 @@ def mapped_files(root: Path) -> set[str]:
         for message in flow["messages"]
         for source in message["sources"]
     ]
-    return {
-        source["file"] for source in sources if source.get("status") != "not implemented"
-    }
+    return {source["file"] for source in sources if source.get("status") != "not implemented"}
 
 
 def source_location(root: Path, allowed: set[str], payload: object) -> str:
@@ -57,10 +57,11 @@ def source_location(root: Path, allowed: set[str], payload: object) -> str:
 
 
 class EditorServer(HTTPServer):
-    def __init__(self, root: Path, command: str, port: int = PORT):
+    def __init__(self, root: Path, command: str | None, port: int = PORT):
         self.root = root.resolve()
         self.command = command
         self.allowed = mapped_files(self.root)
+        self.annotations = AnnotationQueue(self.root)
         super().__init__(("127.0.0.1", port), EditorHandler)
 
 
@@ -100,7 +101,7 @@ class EditorHandler(BaseHTTPRequestHandler):
         ):
             self.reply(403, {"error": "Use the Nexo explorer at localhost:8080."})
             return False
-        if self.path != "/open":
+        if self.path not in {"/open", "/annotations"}:
             self.reply(404, {"error": "Unknown helper endpoint."})
             return False
         return True
@@ -112,10 +113,10 @@ class EditorHandler(BaseHTTPRequestHandler):
             value.strip().lower()
             for value in self.headers.get("Access-Control-Request-Headers", "").split(",")
         }
-        if (
-            self.headers.get("Access-Control-Request-Method") != "POST"
-            or headers != {"content-type", "x-nexo-editor"}
-        ):
+        if self.headers.get("Access-Control-Request-Method") != "POST" or headers != {
+            "content-type",
+            "x-nexo-editor",
+        }:
             self.reply(403, {"error": "Use the explorer's open button."})
             return
         self.reply(200, {"ready": True})
@@ -133,14 +134,24 @@ class EditorHandler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers["Content-Length"])
-            if not 0 < length <= 4096:
+            if not 0 < length <= (32768 if self.path == "/annotations" else 4096):
                 raise ValueError("Request is too large or empty.")
             payload = json.loads(self.rfile.read(length))
+            if self.path == "/annotations":
+                self.save_annotation(payload)
+                return
             location = source_location(self.server.root, self.server.allowed, payload)
         except (ValueError, OSError, RuntimeError):
-            self.reply(400, {"error": "Choose an existing mapped Nexo file and a valid line."})
+            error = (
+                "Send a valid annotation JSON request."
+                if self.path == "/annotations"
+                else "Choose an existing mapped Nexo file and a valid line."
+            )
+            self.reply(400, {"error": error})
             return
         try:
+            if self.server.command is None:
+                raise OSError("VS Code is not installed.")
             subprocess.run(
                 [self.server.command, "--reuse-window", "--goto", location],
                 check=True,
@@ -154,9 +165,27 @@ class EditorHandler(BaseHTTPRequestHandler):
             return
         self.reply(200, {"opened": location})
 
+    def save_annotation(self, payload: object) -> None:
+        try:
+            result = self.server.annotations.append(payload)
+        except Conflict as error:
+            self.reply(409, {"error": str(error)})
+        except ValueError as error:
+            self.reply(400, {"error": str(error)})
+        except OSError:
+            self.reply(
+                503, {"error": "The annotation queue could not be saved. Keep your note and retry."}
+            )
+        else:
+            self.reply(200 if result["duplicate"] else 201, result)
+
 
 def main() -> None:
-    with EditorServer(ROOT, code_command()) as server:
+    try:
+        command = code_command()
+    except RuntimeError:
+        command = None
+    with EditorServer(ROOT, command) as server:
         print(f"Nexo editor helper: http://127.0.0.1:{PORT} (Ctrl+C to stop)", flush=True)
         try:
             server.serve_forever()

@@ -33,10 +33,20 @@ python3 scripts/editor_helper.py
 
 Then use **Open via local helper** from `http://localhost:8080/static/explorer.html` or `http://127.0.0.1:8080/static/explorer.html`. Stop the helper with Ctrl+C. It listens only on `127.0.0.1:8765` and runs `code --reuse-window --goto` for a mapped source file inside this checkout. It checks the requesting origin, host, JSON content type, custom header, path and line; arbitrary commands and files outside Nexo are rejected. It is a local study tool, not a cloud workload. Public deployments use Copy location or the original link. The API permits helper connections only from the explorer page's content security policy.
 
+Use **Annotate** to select text, a diagram box or message, or both, and write a note. The explorer pauses diagram navigation and previews while you compose. Save sends the note to the same local helper, which appends an entry to the workspace's `feedback/ANNOTATIONS.md`. It never calls a chargeback mutation endpoint. A failed save keeps the draft; retrying an unchanged draft cannot append it twice. This works only from the local explorer on port 8080 with the helper running. Notes are plain local files, not uploaded to a service.
+
+The [annotation JSON contract](../contracts/explorer-annotation.schema.json) defines request and result shapes. The TypeScript client and Python helper share mapped component/message/arrow IDs; the helper resolves their names from the mapping and validates them before writing.
+
+The `nexo-implement-feedback-and-answer-questions` skill reads this queue alongside `feedback/QUEUE.md`. Answers and completion details are added to the annotation entry itself. The queue has no background watcher; invoke the skill when you want the waiting notes worked.
+
+For agent updates while the helper can append, use the same queue lock: `python3 scripts/annotation_queue.py A-001 --status in-progress`, then `python3 scripts/annotation_queue.py A-001 --status done --answer-file /path/to/answer.txt` (and `--done-file` for implementation details). The command rereads the queue under the lock and changes only that entry's status and supplied response fields. It preserves other entries and the original note. The helper writes the complete new file durably before replacing it, so a crash cannot leave half a note. The lock coordinates participating writers; an unlocked whole-file rewrite by another program cannot be made safe by this helper.
+
 The browser source is TypeScript. `explorer/tsconfig.json` compiles it to `src/nexo/static/build/`. No framework, runtime dependency or animation is required. The API's content security policy permits these same-origin external scripts and styles.
 
 The UI and generated Nexo diagrams use a dark palette by default. The preserved community SVGs retain their original colors.
 
 Hover or focus an architecture box to compare its role with both community designs. Click or Enter pins the comparison; the related sequence steps stay highlighted. Each picture keeps its original layout. Yellow outlines locate related boxes, and the Zoom buttons make their labels readable. The explanation calls out combined or partial matches: for example, Nexo's PostgreSQL rows cover roles shown as a database, Kafka, and a delivery queue in the references.
+
+Each comparison's **Open original SVG in a new tab** link opens the unchanged reference without Nexo's highlight layer. The architecture and sequence retain their own full-diagram links.
 
 `community_diagrams` and each component's `community` entries in `mapping.json` supply the reference assets, original SVG coordinates, and explanations. `explorer/references/` contains byte-for-byte copies of the reference SVGs in `theory/` so Docker builds are self-contained. The builder copies these unchanged; the browser draws highlights in a separate SVG layer. The reference files in `theory/` are never edited. Tests check reference bytes, coordinate bounds, comparison coverage, and keyboard-accessible boxes.

@@ -60,3 +60,21 @@ pre.source-code { padding: 8px 0; white-space: normal; }
 .diagram-viewport.diagram-dragging, .diagram-viewport.diagram-dragging * { cursor: grabbing; }
 .diagram-navigation-help { font-size: .8rem; }
 .annotation-mode .diagram-viewport { touch-action: auto; user-select: auto; }
+
+.annotation-composer[hidden] { display: none; }
+.annotation-composer { border-color: #d7ad4b; }
+.annotation-composer h2, .annotation-composer h3, .annotation-composer p { margin: .4rem 0; }
+.annotation-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.annotation-columns > div { min-width: 0; }
+#annotation-text { margin: .4rem 0; max-height: 5rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-left: 3px solid #d7ad4b; padding-left: 8px; }
+#annotation-note { width: 100%; font: inherit; padding: 8px; background: #121c26; color: #e0e8ef; border: 1px solid #627c90; border-radius: 4px; }
+#annotation-targets { padding-left: 1.2rem; max-height: 6rem; overflow: auto; }
+.annotation-composer button { font-size: .8rem; padding: .3rem .45rem; }
+#annotation-status { font-size: .85rem; }
+#annotation-result:empty { display: none; }
+.annotation-mode .explanation-link, .annotation-mode .source-code, .annotation-mode .line-number { user-select: text; }
+.annotation-mode .explanation-link:hover { background: transparent; }
+.annotation-mode .component, .annotation-mode .hop { cursor: crosshair; }
+.annotation-target > rect, .annotation-target .ink { stroke: #ff9dc4 !important; stroke-width: 4px !important; }
+.annotation-target > rect, .annotation-target .background { fill: #503247 !important; }
+@media (max-width: 700px) { .annotation-columns { grid-template-columns: 1fr; } }

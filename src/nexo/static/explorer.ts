@@ -1,3 +1,4 @@
+import { annotationsActive, initializeAnnotations } from "./annotations.js";
 import { bindDiagramViewport, diagramNavigationActive, type DiagramViewport } from "./diagram_viewport.js";
 type Source = { file: string; symbol: string; label?: string; line?: number; focus_line?: number; focus_end_line?: number; code?: string; url?: string; location?: string; status: string; plumbing?: boolean };
 type Region = { x: number; y: number; width: number; height: number; label: string };
@@ -147,6 +148,7 @@ function comparisonPanel(parent: HTMLElement, comparison: Comparison): void {
   }
 }
 function previewComponent(id: string): void {
+  if (annotationsActive()) return;
   const component = data.components.find(c => `component:${c.id}` === id); if (!component) return;
   selected = id;
   get("hop-title").textContent = component.name;
@@ -162,6 +164,7 @@ function previewComponent(id: string): void {
   glossary(panel); glossary(get("hop-title")); highlight();
 }
 function preview(id: string): void {
+  if (annotationsActive()) return;
   if (id.startsWith("component:")) { previewComponent(id); return; }
   const message = messages.get(id); if (!message) return;
   selected = id;
@@ -176,6 +179,7 @@ function preview(id: string): void {
   let hoveredExplanation: number | null = null;
   let focusedExplanation: number | null = null;
   const showSources = (index: number | null): void => {
+    if (annotationsActive()) return;
     const sourceIndices = index === null ? undefined : links[index]?.sources;
     sourceCards.forEach((card, i) => {
       card.hidden = sourceIndices !== undefined && !sourceIndices.includes(i);
@@ -189,6 +193,7 @@ function preview(id: string): void {
   };
   const refreshSources = (): void => showSources(hoveredExplanation ?? focusedExplanation ?? pinnedExplanation);
   const resetSources = (): void => {
+    if (annotationsActive()) return;
     pinnedExplanation = hoveredExplanation = focusedExplanation = null; showSources(null);
   };
   panel.onkeydown = event => { if (event.key === "Escape") { event.preventDefault(); resetSources(); } };
@@ -284,16 +289,27 @@ async function loadSvg(file: string, target: HTMLElement): Promise<void> {
   bindHops(target);
 }
 async function renderFlow(flow: Flow): Promise<void> {
-  currentFlow = flow; const request = ++flowRequest;
-  get<HTMLSelectElement>("flow").value = flow.id;
-  get("flow-title").textContent = flow.name;
-  glossary(get("flow-title"));
-  get("flow-note").textContent = flow.note;
-  const link = get<HTMLAnchorElement>("sequence-file"); link.href = `sequences/${flow.id}.svg`;
-  const temporary = document.createElement("div"); await loadSvg(link.href, temporary);
-  if (request !== flowRequest) return;
-  get("sequence").replaceChildren(...Array.from(temporary.childNodes));
-  glossary(get("flow-note")); highlight();
+  if (annotationsActive()) return;
+  const request = ++flowRequest;
+  const annotate = get<HTMLButtonElement>("annotate"); annotate.disabled = true;
+  try {
+    const temporary = document.createElement("div"); await loadSvg(`sequences/${flow.id}.svg`, temporary);
+    if (request !== flowRequest) return;
+    currentFlow = flow;
+    get<HTMLSelectElement>("flow").value = flow.id;
+    get("flow-title").textContent = flow.name;
+    glossary(get("flow-title"));
+    get("flow-note").textContent = flow.note;
+    get<HTMLAnchorElement>("sequence-file").href = `sequences/${flow.id}.svg`;
+    get("sequence").replaceChildren(...Array.from(temporary.childNodes));
+    glossary(get("flow-note")); highlight();
+  } finally {
+    if (request === flowRequest) {
+      // A draft must describe the diagram that finished loading, including after a failed fetch.
+      get<HTMLSelectElement>("flow").value = currentFlow.id;
+      annotate.disabled = false;
+    }
+  }
 }
 async function main(): Promise<void> {
   const response = await fetch("explorer-data.json"); if (!response.ok) throw new Error("Explorer data is missing. Run python scripts/build_explorer.py.");
@@ -325,6 +341,11 @@ async function main(): Promise<void> {
   });
   get("unpin").addEventListener("click", () => { selectionRequest += 1; pinned = null; get("selection-state").textContent = "Selection unpinned"; highlight(); });
   glossary(document.body);
+  initializeAnnotations(() => ({ flow_id: currentFlow.id, flow_name: currentFlow.name }), target => {
+    if (target.kind === "component") return data.components.find(component => component.id === target.id)?.name;
+    if (target.kind === "message") return messages.get(target.id)?.label;
+    return [...messages.values()].find(message => message.arrow === target.id)?.label;
+  }, () => { selectionRequest += 1; });
 }
 void main().catch(error => { get("notice").textContent = String(error); get("notice").className = "error"; });
 export {};

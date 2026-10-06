@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Local explorer annotation request",
+  "description": "POST http://127.0.0.1:8765/annotations; application/json and X-Nexo-Editor: 1 required. Only the localhost:8080 and 127.0.0.1:8080 origins are accepted. Body limit: 32768 bytes. Mapping IDs must exist in explorer/mapping.json. No client-selected file paths.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "view", "selected_text", "targets", "note"],
+  "properties": {
+    "request_id": {"type": "string", "format": "uuid", "description": "Canonical lowercase UUID. Reuse for unchanged retries; changed content with the same ID returns 409."},
+    "view": {
+      "type": "object", "additionalProperties": false,
+      "required": ["flow_id", "panel"],
+      "properties": {
+        "flow_id": {"type": "string", "description": "A flow ID from the mapping."},
+        "panel": {"enum": ["architecture", "sequence", "code", "community", "glossary", "page"]}
+      }
+    },
+    "selected_text": {"type": "string", "maxLength": 2000, "description": "Selected page text. Text or at least one target is required. CRLF is normalized to LF."},
+    "targets": {"type": "array", "maxItems": 8, "uniqueItems": true, "items": {"$ref": "#/$defs/target"}},
+    "note": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S", "description": "User's words; CRLF is normalized to LF. Control characters other than tab/newline are rejected."}
+  },
+  "anyOf": [
+    {"properties": {"selected_text": {"pattern": "\\S"}}},
+    {"properties": {"targets": {"minItems": 1}}}
+  ],
+  "$defs": {
+    "target": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id"],
+      "properties": {
+        "kind": {"enum": ["component", "message", "arrow"]},
+        "id": {"type": "string", "description": "Known mapping ID; kind/ID pairs must be distinct."},
+        "label": {"type": "string", "maxLength": 200, "description": "Optional client hint, ignored when saving; labels come from the mapping."}
+      }
+    },
+    "result": {
+      "description": "201 after a durable new write; 200 after durable confirmation of an identical retry. Errors: 400 invalid request, 403 untrusted origin/host, 409 ID/content conflict, 503 persistence unavailable.",
+      "type": "object", "additionalProperties": false, "required": ["id", "duplicate"],
+      "properties": {"id": {"type": "string", "pattern": "^A-[0-9]+$"}, "duplicate": {"type": "boolean"}}
+    },
+    "error": {
+      "type": "object", "additionalProperties": false, "required": ["error"],
+      "properties": {"error": {"type": "string"}}
+    }
+  }
+}
