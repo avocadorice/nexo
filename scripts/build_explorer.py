@@ -157,6 +157,48 @@ def resolve_source(root: Path, source: dict, source_root: str) -> dict:
     return result
 
 
+def validate_explanation_links(message: dict) -> None:
+    links = message.get("explanation_links", [])
+    if not isinstance(links, list):
+        raise ValueError(f"Explanation links must be a list: {message['id']}")
+    spans = []
+    explanation = message["explanation"]
+    for link in links:
+        text = link.get("text") if isinstance(link, dict) else None
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"Explanation link needs nonempty text: {message['id']}")
+        start = explanation.find(text)
+        if start < 0 or explanation.find(text, start + 1) >= 0:
+            raise ValueError(f"Explanation text must match once: {message['id']}: {text!r}")
+        if not any(text in paragraph for paragraph in explanation.split("\n\n")):
+            raise ValueError(f"Explanation text must stay in one paragraph: {message['id']}")
+        indices = link.get("sources")
+        if (
+            not isinstance(indices, list)
+            or not indices
+            or any(
+                type(index) is not int or not 0 <= index < len(message["sources"])
+                for index in indices
+            )
+            or len(indices) != len(set(indices))
+        ):
+            raise ValueError(f"Explanation sources must be unique valid indices: {message['id']}")
+        for index in indices:
+            source = message["sources"][index]
+            if (
+                source.get("status", "implemented") != "implemented"
+                or not isinstance(source.get("focus"), str)
+                or not source["focus"].strip()
+            ):
+                raise ValueError(
+                    f"Explanation source must be implemented and focused: {message['id']}"
+                )
+        spans.append((start, start + len(text)))
+    ordered = sorted(spans)
+    if any(left[1] > right[0] for left, right in zip(ordered, ordered[1:], strict=False)):
+        raise ValueError(f"Explanation links must not overlap: {message['id']}")
+
+
 def validate(mapping: dict) -> None:
     component_ids = [item["id"] for item in mapping["components"]]
     arrow_ids = [item["id"] for item in mapping["arrows"]]
@@ -177,6 +219,7 @@ def validate(mapping: dict) -> None:
             for field in ("request", "response", "protocol", "explanation", "sources", "mode"):
                 if not message.get(field):
                     raise ValueError(f"Missing {field} in {message['id']}")
+            validate_explanation_links(message)
             if message["from"] not in component_ids or message["to"] not in component_ids:
                 raise ValueError(f"Unknown component in message {message['id']}")
             if message["arrow"] not in arrow_ids:

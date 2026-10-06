@@ -3,7 +3,8 @@ type Region = { x: number; y: number; width: number; height: number; label: stri
 type Comparison = { diagram: string; regions: Region[]; explanation: string; relationship: string };
 type CommunityDiagram = { id: string; title: string; asset: string; view_box: [number, number, number, number] };
 type Component = { id: string; name: string; language: string; deployment: string; scaling: string; status: string; sources: Source[]; community: Comparison[] };
-type Message = { id: string; arrow: string; label: string; from: string; to: string; mode: string; request: string; response: string; durable?: string; protocol: string; explanation: string; simplification?: string; sources: Source[] };
+type ExplanationLink = { text: string; sources: number[] };
+type Message = { id: string; arrow: string; label: string; from: string; to: string; mode: string; request: string; response: string; durable?: string; protocol: string; explanation: string; explanation_links?: ExplanationLink[]; simplification?: string; sources: Source[] };
 type Flow = { id: string; name: string; note: string; messages: Message[] };
 type Data = { components: Component[]; flows: Flow[]; glossary: Record<string, string>; community_diagrams: CommunityDiagram[] };
 const get = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -146,6 +147,7 @@ function previewComponent(id: string): void {
   get("hop-title").textContent = component.name;
   get("selection-state").textContent = pinned === id ? "Pinned" : pinned ? "Previewing · pinned selection returns on exit" : "Preview";
   const panel = get("code-panel"); panel.replaceChildren();
+  panel.onkeydown = null;
   appendText(panel, "p", "Highlighted areas show the closest roles in the two community designs. They do not mean the implementations are identical.");
   appendText(panel, "p", "Click a Nexo box to keep this comparison open. Use Zoom to read a highlighted box in its original picture.", "muted");
   component.community.forEach(comparison => comparisonPanel(panel, comparison));
@@ -162,12 +164,62 @@ function preview(id: string): void {
   glossary(get("hop-title"));
   get("selection-state").textContent = pinned === id ? "Pinned" : pinned ? "Previewing · pinned selection returns on exit" : "Preview";
   const panel = get("code-panel"); panel.replaceChildren();
-  for (const paragraph of message.explanation.split("\n\n")) appendText(panel, "p", paragraph);
+  const links = message.explanation_links ?? [];
+  const explanationControls: HTMLElement[] = [];
+  const sourceCards: HTMLElement[] = [];
+  let pinnedExplanation: number | null = null;
+  let hoveredExplanation: number | null = null;
+  let focusedExplanation: number | null = null;
+  const showSources = (index: number | null): void => {
+    const sourceIndices = index === null ? undefined : links[index]?.sources;
+    sourceCards.forEach((card, i) => {
+      card.hidden = sourceIndices !== undefined && !sourceIndices.includes(i);
+      card.classList.toggle("source-selected", sourceIndices?.includes(i) ?? false);
+    });
+    explanationControls.forEach(control => {
+      const i = Number(control.dataset.explanation);
+      control.classList.toggle("explanation-active", i === index);
+      control.setAttribute("aria-pressed", String(i === pinnedExplanation));
+    });
+  };
+  const refreshSources = (): void => showSources(hoveredExplanation ?? focusedExplanation ?? pinnedExplanation);
+  const resetSources = (): void => {
+    pinnedExplanation = hoveredExplanation = focusedExplanation = null; showSources(null);
+  };
+  panel.onkeydown = event => { if (event.key === "Escape") { event.preventDefault(); resetSources(); } };
+  if (links.length) appendText(panel, "p", "Hover or focus an underlined explanation to show its code below. Click or Enter keeps it shown; Escape shows all code.", "muted explanation-help");
+  for (const paragraph of message.explanation.split("\n\n")) {
+    const p = appendText(panel, "p", "", "hop-explanation");
+    const matches = links.map((link, index) => ({ link, index, start: paragraph.indexOf(link.text) })).filter(match => match.start >= 0).sort((a, b) => a.start - b.start);
+    let previous = 0;
+    for (const { link, index, start } of matches) {
+      p.append(document.createTextNode(paragraph.slice(previous, start)));
+      const control = appendText(p, "button", link.text, "explanation-link") as HTMLButtonElement;
+      control.type = "button"; control.setAttribute("aria-pressed", "false");
+      control.setAttribute("aria-controls", link.sources.map(i => `source-${message.id}-${i}`).join(" "));
+      control.dataset.explanation = String(index); explanationControls.push(control);
+      const pin = (): void => { pinnedExplanation = pinnedExplanation === index ? null : index; refreshSources(); };
+      control.addEventListener("pointerenter", () => { hoveredExplanation = index; refreshSources(); });
+      control.addEventListener("focus", () => { focusedExplanation = index; refreshSources(); });
+      control.addEventListener("pointerleave", () => { hoveredExplanation = null; refreshSources(); });
+      control.addEventListener("blur", () => { focusedExplanation = null; refreshSources(); });
+      control.addEventListener("click", pin);
+      previous = start + link.text.length;
+    }
+    p.append(document.createTextNode(paragraph.slice(previous)));
+  }
   appendText(panel, "p", `${message.protocol} · ${message.mode}`, "muted hop-protocol");
   if (message.durable) appendText(panel, "p", `◆ Durable transition: ${message.durable}`, "success");
   appendText(panel, "h3", "Where this happens");
   if (message.sources.some(source => source.focus_line !== undefined)) appendText(panel, "p", "Highlighted lines perform this step. The surrounding code gives context.", "muted code-legend");
-  message.sources.forEach(source => sourcePanel(panel, source));
+  if (links.length) {
+    const reset = appendText(panel, "button", "Show all code", "show-all-code") as HTMLButtonElement; reset.type = "button";
+    reset.addEventListener("click", resetSources);
+  }
+  message.sources.forEach((source, index) => {
+    const card = appendText(panel, "div", "", "source-card"); card.id = `source-${message.id}-${index}`;
+    sourceCards.push(card); sourcePanel(card, source);
+  });
   const contract = document.createElement("details"); appendText(contract, "summary", "Request and response");
   appendText(contract, "h3", "Request"); appendText(contract, "pre", message.request);
   appendText(contract, "h3", "Response"); appendText(contract, "pre", message.response); panel.append(contract);
@@ -193,7 +245,8 @@ function bindHops(root: HTMLElement): void {
       if (flow && currentFlow.id !== flow.id) await renderFlow(flow);
       if (request === selectionRequest) preview(id);
     };
-    node.addEventListener("pointerenter", () => void choose(false));
+    // Scrolling code into keyboard focus can move a diagram beneath a stationary pointer.
+    node.addEventListener("pointermove", () => { if (resolve() !== selected) void choose(false); });
     node.addEventListener("focus", () => void choose(false));
     node.addEventListener("click", () => void choose(true));
     node.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void choose(true); } });

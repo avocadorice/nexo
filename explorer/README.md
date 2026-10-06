@@ -15,6 +15,8 @@ The builder resolves Python functions/methods, Go functions/methods/structs, Typ
 
 Missing or ambiguous symbols and focus anchors, reversed or clipped highlight ranges, and unmapped architecture arrows fail the build. A genuinely future component must explicitly use `status: "not implemented"`; it is never supplied with invented code.
 
+Underlined explanation sentences or clauses reveal the code that implements those words when hovered or keyboard-focused. Click or Enter pins that explanation's code; Escape or Show all code restores the whole hop. Unlinked text remains plain when it does not correspond cleanly to the extracted lines. Optional `explanation_links` annotations in the same mapping pair exact explanation text with source indices. The builder rejects stale, overlapping or ambiguous text, invalid indices and links to unfocused or unimplemented code. Hover only changes which existing source cards are shown; it does not rebuild the explanation or steal keyboard focus.
+
 VS Code links use the build machine's checkout path by default. Container/cloud builds should pass the user's local path, for example `python scripts/build_explorer.py --source-root /Users/you/projects/nexo`, so those links open the matching local checkout. Rebuild after source changes; excerpts and line numbers are always extracted, never copied.
 
 Each excerpt also has **Copy location**, which copies the absolute `file:line` for VS Code's Quick Open (Cmd+P). The location stays visible for manual copying when a browser denies clipboard access. The original `vscode://` link remains available in browsers that support it.

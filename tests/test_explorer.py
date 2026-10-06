@@ -38,6 +38,10 @@ def test_all_diagram_hops_resolve_real_source_and_render(tmp_path):
     for flow in data["flows"]:
         for hop in flow["messages"]:
             assert all("focus_line" in source for source in hop["sources"])
+            for link in hop.get("explanation_links", []):
+                assert link["text"] in hop["explanation"]
+                for index in link["sources"]:
+                    assert hop["sources"][index]["focus_line"] > 0
 
 
 def test_missing_source_fails_build_instead_of_showing_stale_code(tmp_path):
@@ -194,3 +198,88 @@ def test_community_map_rejects_missing_counterpart_or_out_of_bounds_region():
     outside["components"][0]["community"][0]["regions"][0]["x"] = -1
     with pytest.raises(ValueError, match="Community region outside"):
         builder.validate(outside)
+
+
+@pytest.fixture
+def explanation_mapping():
+    mapping = json.loads((ROOT / "explorer/mapping.json").read_text())
+    message = mapping["flows"][0]["messages"][0]
+    message["explanation"] = "Record the claim. Keep the same file.\n\nSend its bytes."
+    message["sources"] = [
+        {"file": "sample.py", "symbol": "claim", "focus": "claim()"},
+        {"file": "sample.py", "symbol": "send", "focus": "send()", "status": "implemented"},
+    ]
+    message["explanation_links"] = [{"text": "Record the claim.", "sources": [0]}]
+    return mapping, message
+
+
+def test_explanation_links_allow_ordered_or_reversed_nonoverlapping_anchors(explanation_mapping):
+    mapping, message = explanation_mapping
+    message["explanation_links"] = [
+        {"text": "Send its bytes.", "sources": [0, 1]},
+        {"text": "Record the claim.", "sources": [0]},
+        {"text": " Keep the same file.", "sources": [1]},
+    ]
+    builder.validate(mapping)
+    message.pop("explanation_links")
+    builder.validate(mapping)
+    message["explanation_links"] = []
+    builder.validate(mapping)
+
+
+@pytest.mark.parametrize("links", [None, {}, "Record the claim."])
+def test_explanation_link_collection_must_be_a_list(explanation_mapping, links):
+    mapping, message = explanation_mapping
+    message["explanation_links"] = links
+    with pytest.raises(ValueError, match="Explanation links must be a list"):
+        builder.validate(mapping)
+
+
+@pytest.mark.parametrize("text", [None, "", "   ", 1, "outdated sentence", "file.\n\nSend"])
+def test_explanation_anchor_rejects_missing_drifted_or_cross_paragraph_text(
+    explanation_mapping, text
+):
+    mapping, message = explanation_mapping
+    message["explanation_links"][0]["text"] = text
+    with pytest.raises(ValueError, match="Explanation link needs|Explanation text must"):
+        builder.validate(mapping)
+
+
+@pytest.mark.parametrize("explanation,text", [("Save. Save.", "Save."), ("aaa", "aa")])
+def test_explanation_anchor_rejects_repeated_and_overlapping_occurrences(
+    explanation_mapping, explanation, text
+):
+    mapping, message = explanation_mapping
+    message["explanation"] = explanation
+    message["explanation_links"][0]["text"] = text
+    with pytest.raises(ValueError, match="Explanation text must match once"):
+        builder.validate(mapping)
+
+
+def test_explanation_anchors_cannot_overlap_each_other(explanation_mapping):
+    mapping, message = explanation_mapping
+    message["explanation_links"].append({"text": "the claim. Keep", "sources": [1]})
+    with pytest.raises(ValueError, match="Explanation links must not overlap"):
+        builder.validate(mapping)
+
+
+@pytest.mark.parametrize("indices", [None, [], [0, 0], [-1], [2], [True], ["0"], [[0]], 0])
+def test_explanation_sources_reject_invalid_or_repeated_indices(explanation_mapping, indices):
+    mapping, message = explanation_mapping
+    message["explanation_links"][0]["sources"] = indices
+    with pytest.raises(ValueError, match="Explanation sources must be unique valid indices"):
+        builder.validate(mapping)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"status": "not implemented"}, {"status": "unknown"}, {"focus": None}, {"focus": ""}],
+)
+def test_explanation_sources_require_implemented_focused_code(explanation_mapping, changes):
+    mapping, message = explanation_mapping
+    message["sources"][0].update(changes)
+    with pytest.raises(ValueError, match="Explanation source must be implemented and focused"):
+        builder.validate(mapping)
+    message["sources"][0].pop("focus")
+    with pytest.raises(ValueError, match="Explanation source must be implemented and focused"):
+        builder.validate(mapping)

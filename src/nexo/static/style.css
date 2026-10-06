@@ -48,3 +48,9 @@ pre.source-code { padding: 8px 0; white-space: normal; }
 .source-controls button { font-size: .8rem; padding: .3rem .45rem; }
 .source-status:empty { display: none; }
 .source-status { font-size: .85rem; }
+.explanation-help { font-size: .8rem; }
+.explanation-link { display: inline; max-width: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: #8ca5ba; text-underline-offset: .2em; }
+.explanation-link:hover, .explanation-active { background: #fff0b8; text-decoration-color: #936200; }
+.explanation-link[aria-pressed=true] { box-shadow: 0 2px #7241b0; }
+.source-selected { border-left: 3px solid #936200; padding-left: 8px; }
+.show-all-code { font-size: .8rem; padding: .3rem .45rem; }

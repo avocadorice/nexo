@@ -664,6 +664,15 @@
           "request_label": "POST /api/chargebacks + Idempotency-Key",
           "response_label": "201 new / 200 replay; chargeback JSON",
           "explanation": "The browser creates a UUID as the idempotency key and sends it with the chargeback POST request.\n\nIf the connection drops or the request times out before a reply arrives, submit the same details again with the same key. That lets the API return the same chargeback instead of creating another one.\n\n201 means the API recorded the chargeback. A retry can return 200 with that same chargeback. Neither response means the dispute has been resolved.",
+          "explanation_links": [
+            {
+              "text": "The browser creates a UUID as the idempotency key and sends it with the chargeback POST request.",
+              "sources": [
+                0,
+                1
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "src/nexo/static/ui.ts",
@@ -711,6 +720,20 @@
           "request_label": "Bearer token \u2192 active token lookup",
           "response_label": "Customer identity + role / authentication error",
           "explanation": "The API looks up the bearer token to find the customer and their role. Expired or revoked tokens do not get access. The database stores a hash of the token, not the token itself.",
+          "explanation_links": [
+            {
+              "text": "The API looks up the bearer token to find the customer and their role.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "Expired or revoked tokens do not get access.",
+              "sources": [
+                0
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/auth/auth.go",
@@ -737,6 +760,27 @@
           "request_label": "INSERT chargeback + unique customer/key + transaction",
           "response_label": "COMMIT, then accepted chargeback ID",
           "explanation": "The API saves the chargeback once. The database allows only one chargeback per transaction and one request per customer and idempotency key. If the same request arrives twice with the same key, one saves the row and the other reads that chargeback.\n\nThe acceptance audit event is saved in the same transaction. The API replies only after the commit succeeds.",
+          "explanation_links": [
+            {
+              "text": "The API saves the chargeback once.",
+              "sources": [
+                0,
+                1
+              ]
+            },
+            {
+              "text": "The database allows only one chargeback per transaction and one request per customer and idempotency key.",
+              "sources": [
+                1
+              ]
+            },
+            {
+              "text": "The acceptance audit event is saved in the same transaction.",
+              "sources": [
+                2
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/api/api.go",
@@ -791,6 +835,14 @@
           "request_label": "GET transactions / chargebacks / chargeback ID",
           "response_label": "200 bounded JSON / 404 not owned",
           "explanation": "The browser asks the API for this customer\u2019s transactions and chargebacks. Refresh sends those requests again, so the page shows the latest saved status.",
+          "explanation_links": [
+            {
+              "text": "The browser asks the API for this customer\u2019s transactions and chargebacks.",
+              "sources": [
+                0
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "src/nexo/static/ui.ts",
@@ -827,6 +879,15 @@
           "request_label": "SELECT with customer ownership predicate",
           "response_label": "pending or current batch state",
           "explanation": "The API reads the chargeback and its batch. No batch yet means pending; otherwise the batch supplies the status. Every query includes the customer ID, so a customer cannot read someone else\u2019s chargeback.\n\nWithout an acknowledgement, a sent file stays submitted or unknown.",
+          "explanation_links": [
+            {
+              "text": "Every query includes the customer ID, so a customer cannot read someone else\u2019s chargeback.",
+              "sources": [
+                0,
+                1
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/api/api.go",
@@ -869,6 +930,14 @@
           "request_label": "00, 06, 12, 18 UTC \u2192 schedule Job",
           "response_label": "Job exits; counts and completion status",
           "explanation": "Kubernetes starts a Job at 00:00, 06:00, 12:00 and 18:00 UTC. Each Job collects chargebacks received before that slot\u2019s cutoff. A chargeback that arrives too late stays unassigned for a later slot.",
+          "explanation_links": [
+            {
+              "text": "Kubernetes starts a Job at 00:00, 06:00, 12:00 and 18:00 UTC.",
+              "sources": [
+                0
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "deploy/base/scheduler.yaml",
@@ -915,6 +984,20 @@
           "request_label": "INSERT slot; list unfinished building batches",
           "response_label": "Existing or new durable slot; recovery batch IDs",
           "explanation": "The Job first takes a database lock so only one scheduler runs at a time. It records the slot, then finishes any batches whose file build stopped halfway. Replaying the slot keeps every existing batch assignment.",
+          "explanation_links": [
+            {
+              "text": "The Job first takes a database lock so only one scheduler runs at a time.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "It records the slot",
+              "sources": [
+                1
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "src/nexo/batching.py",
@@ -966,6 +1049,32 @@
           "request_label": "SELECT \u2026 FOR UPDATE SKIP LOCKED + assign batch_id",
           "response_label": "COMMIT batch and immutable membership",
           "explanation": "The Job locks a limited number of unassigned chargebacks. Other claimers skip those rows. It creates a batch and assigns the rows in the same transaction.\n\nOnce a chargeback has a batch, the database refuses to move it to another one.",
+          "explanation_links": [
+            {
+              "text": "The Job locks a limited number of unassigned chargebacks.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "Other claimers skip those rows.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "assigns the rows",
+              "sources": [
+                1
+              ]
+            },
+            {
+              "text": "Once a chargeback has a batch, the database refuses to move it to another one.",
+              "sources": [
+                2
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "src/nexo/batching.py",
@@ -1013,6 +1122,20 @@
           "request_label": "PutObject: deterministic CSV + SHA-256 metadata",
           "response_label": "Object stored / retryable storage error",
           "explanation": "The Job builds a CSV from the batch\u2019s fixed set of chargebacks and uploads it to S3. The batch ID determines the filename.\n\nIf the upload succeeds but the Job crashes before saving the result, the retry rebuilds the same bytes at the same object key.",
+          "explanation_links": [
+            {
+              "text": "The Job builds a CSV",
+              "sources": [
+                1
+              ]
+            },
+            {
+              "text": "uploads it to S3.",
+              "sources": [
+                0
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "src/nexo/batching.py",
@@ -1050,6 +1173,20 @@
           "request_label": "UPDATE ready + object key / digest / size",
           "response_label": "COMMIT; ready work visible to worker poll",
           "explanation": "After S3 stores the CSV, the Job saves its object key, hash and size and marks the batch ready. Delivery workers can pick it up after that transaction commits. The database then prevents anyone from changing which file this batch refers to.",
+          "explanation_links": [
+            {
+              "text": "the Job saves its object key, hash and size and marks the batch ready.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "The database then prevents anyone from changing which file this batch refers to.",
+              "sources": [
+                1
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "src/nexo/batching.py",
@@ -1094,6 +1231,26 @@
           "request_label": "Poll due batches, lock one, record attempt",
           "response_label": "Batch manifest + attempt UUID",
           "explanation": "The worker checks for batches that need delivery or another status check. It takes a database lock on one batch and records a delivery attempt before contacting the receiver.\n\nIf the worker dies, the lock is released. The next worker marks the unfinished attempt interrupted and takes over the same batch.",
+          "explanation_links": [
+            {
+              "text": "The worker checks for batches that need delivery or another status check.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "It takes a database lock on one batch",
+              "sources": [
+                1
+              ]
+            },
+            {
+              "text": "records a delivery attempt before contacting the receiver.",
+              "sources": [
+                2
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/delivery/worker.go",
@@ -1138,6 +1295,14 @@
           "request_label": "GetObject for stored object key",
           "response_label": "Verified bytes / artifact integrity mismatch",
           "explanation": "The worker downloads the CSV named in the batch record. It checks the file\u2019s size and hash against that record before sending anything to the receiver.",
+          "explanation_links": [
+            {
+              "text": "The worker downloads the CSV named in the batch record.",
+              "sources": [
+                0
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/delivery/clients.go",
@@ -1163,6 +1328,20 @@
           "request_label": "SSH host-key check; write unique .tmp; read back",
           "response_label": "Matching SHA-256 / transport failure",
           "explanation": "The worker checks the receiver\u2019s SSH host key, then uploads to a temporary filename. The receiver ignores temporary files. The worker reads the bytes back to check the upload.\n\nAn interrupted temporary upload can be tried again with a new attempt filename, as long as publication has not started.",
+          "explanation_links": [
+            {
+              "text": "The worker checks the receiver\u2019s SSH host key",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "then uploads to a temporary filename.",
+              "sources": [
+                1
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/delivery/clients.go",
@@ -1201,6 +1380,14 @@
           "request_label": "COMMIT publication_started=true, state=unknown + audit",
           "response_label": "Durable publication fence / changed-fence error",
           "explanation": "Before renaming the file, the worker records that publication has started and sets the batch to unknown. This record survives a crash.\n\nFrom here on, the worker must check what the receiver has. A missing final file does not prove the rename failed, so it cannot simply upload again.",
+          "explanation_links": [
+            {
+              "text": "Before renaming the file, the worker records that publication has started and sets the batch to unknown.",
+              "sources": [
+                0
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/delivery/worker.go",
@@ -1236,6 +1423,20 @@
           "request_label": "Rename .tmp \u2192 {batch_id}.csv; never overwrite",
           "response_label": "Success / ambiguity \u2192 reconcile same identity",
           "explanation": "The worker renames the temporary file to {batch_id}.csv. The receiver makes the complete file visible in one step and refuses to replace an existing final file.\n\nIf the reply is lost, the worker checks this same filename and its acknowledgement.",
+          "explanation_links": [
+            {
+              "text": "The worker renames the temporary file to {batch_id}.csv.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "The receiver makes the complete file visible in one step and refuses to replace an existing final file.",
+              "sources": [
+                1
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/delivery/worker.go",
@@ -1280,6 +1481,14 @@
           "request_label": "Read ACK first; otherwise verify final CSV",
           "response_label": "acknowledged / rejected / submitted / conflict / unknown",
           "explanation": "A timeout does not tell us whether the rename succeeded. The worker first looks for an acknowledgement. If there is none, it checks the final CSV against the saved hash and size.\n\nNo evidence after publication started means unknown. If the worker already verified the final file earlier, it keeps submitted even when a later check fails.",
+          "explanation_links": [
+            {
+              "text": "The worker first looks for an acknowledgement.",
+              "sources": [
+                0
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/delivery/worker.go",
@@ -1314,6 +1523,20 @@
           "request_label": "UPDATE outcome + delivery attempt + next check",
           "response_label": "COMMIT; dashboard reflects uncertainty",
           "explanation": "The worker saves the batch status and the attempt result together. If it still needs an answer, it schedules another check in 30 seconds. The operations view shows unknown until there is evidence of what happened.",
+          "explanation_links": [
+            {
+              "text": "The worker saves the batch status and the attempt result together.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "If it still needs an answer, it schedules another check in 30 seconds.",
+              "sources": [
+                0
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/delivery/worker.go",
@@ -1348,6 +1571,20 @@
           "request_label": "Background scan of final CSV \u2192 validate and deduplicate",
           "response_label": "Receipt ledger commit: accepted / rejected",
           "explanation": "The simulator reads final CSV files and records which chargebacks each file contains. If a chargeback already belongs to another received file, it rejects the new file. It saves the receipt and accepted membership together in SQLite.",
+          "explanation_links": [
+            {
+              "text": "records which chargebacks each file contains.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "It saves the receipt",
+              "sources": [
+                1
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "src/nexo/simulator.py",
@@ -1386,6 +1623,14 @@
           "request_label": "Receipt \u2192 temporary ACK \u2192 fsync + atomic rename",
           "response_label": "Durable /acks/{batch_id}.json",
           "explanation": "The simulator writes an acknowledgement with the batch ID, file hash, row count and accepted or rejected status. It writes a temporary file first, then renames it so the worker cannot read half a reply. A delayed or missing acknowledgement keeps Nexo waiting.",
+          "explanation_links": [
+            {
+              "text": "It writes a temporary file first, then renames it so the worker cannot read half a reply.",
+              "sources": [
+                0
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "src/nexo/simulator.py",
@@ -1413,6 +1658,14 @@
           "request_label": "Read and validate exact acknowledgement contract",
           "response_label": "Matching evidence / integrity conflict",
           "explanation": "The worker checks that the acknowledgement names this batch and matches its file hash and row count. Only then does it accept the receiver\u2019s answer. Rejection ends this batch; it does not put the chargebacks into a new file.",
+          "explanation_links": [
+            {
+              "text": "The worker checks that the acknowledgement names this batch and matches its file hash and row count.",
+              "sources": [
+                1
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/delivery/worker.go",
@@ -1447,6 +1700,21 @@
           "request_label": "UPDATE terminal state + acknowledgement + attempt",
           "response_label": "COMMIT; terminal state cannot be reset",
           "explanation": "The worker saves acknowledged or rejected on the batch, along with the receiver\u2019s acknowledgement. Customers and operations read that same status. The database keeps the outcome and an audit record of the change.",
+          "explanation_links": [
+            {
+              "text": "The worker saves acknowledged or rejected on the batch, along with the receiver\u2019s acknowledgement.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "The database keeps the outcome and an audit record of the change.",
+              "sources": [
+                0,
+                1
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/delivery/worker.go",
@@ -1491,6 +1759,20 @@
           "request_label": "GET lifecycle summary / batches / batch detail",
           "response_label": "Counts + manifests + delivery attempts + audit",
           "explanation": "The operations page asks for lifecycle counts and recent batches. Selecting a batch fetches its file details, delivery attempts and audit events. These endpoints require an operations token; a customer token cannot use them.",
+          "explanation_links": [
+            {
+              "text": "The operations page asks for lifecycle counts and recent batches.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "Selecting a batch fetches its file details, delivery attempts and audit events.",
+              "sources": [
+                1
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "src/nexo/static/ui.ts",
@@ -1536,6 +1818,20 @@
           "request_label": "SELECT grouped state + age + bounded records",
           "response_label": "Read-only operational snapshot",
           "explanation": "The API counts chargebacks and batches by status and shows how long the oldest unassigned chargeback has waited. Batch details link the file to its delivery attempts and audit events.\n\nRequest logs add the request ID, method, status and duration. They leave out credentials and request bodies.",
+          "explanation_links": [
+            {
+              "text": "The API counts chargebacks and batches by status and shows how long the oldest unassigned chargeback has waited.",
+              "sources": [
+                0
+              ]
+            },
+            {
+              "text": "Batch details link the file to its delivery attempts and audit events.",
+              "sources": [
+                2
+              ]
+            }
+          ],
           "sources": [
             {
               "file": "internal/api/api.go",
